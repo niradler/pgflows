@@ -25,21 +25,36 @@ class PgStateBackend(OrchestratorBackend):
         self._pool: asyncpg.Pool | None = None
 
     async def initialize(self) -> None:
+        async def _init_conn(conn: asyncpg.Connection) -> None:
+            await conn.set_type_codec(
+                "jsonb",
+                encoder=json.dumps,
+                decoder=json.loads,
+                schema="pg_catalog",
+            )
+            await conn.set_type_codec(
+                "json",
+                encoder=json.dumps,
+                decoder=json.loads,
+                schema="pg_catalog",
+            )
+
         self._pool = await asyncpg.create_pool(
             self._dsn,
             min_size=self._min_pool,
             max_size=self._max_pool,
+            init=_init_conn,
         )
 
     async def register_workflow(self, name: str, config: dict[str, Any]) -> None:
         await self._execute(
             """
             INSERT INTO pyflows.workflow_definitions (name, config)
-            VALUES ($1, $2::jsonb)
+            VALUES ($1, $2)
             ON CONFLICT (name) DO UPDATE SET config = EXCLUDED.config, updated_at = NOW()
             """,
             name,
-            json.dumps(config),
+            config,
         )
 
     async def get_workflow_definition(self, name: str) -> dict[str, Any]:
@@ -55,11 +70,11 @@ class PgStateBackend(OrchestratorBackend):
         row = await self._fetchone(
             """
             INSERT INTO pyflows.workflow_instances (workflow_name, input)
-            VALUES ($1, $2::jsonb)
+            VALUES ($1, $2)
             RETURNING instance_id::text
             """,
             workflow_name,
-            json.dumps(input_data),
+            input_data,
         )
         return row["instance_id"]  # type: ignore[index]
 
@@ -94,11 +109,11 @@ class PgStateBackend(OrchestratorBackend):
         await self._execute(
             """
             UPDATE pyflows.workflow_instances
-            SET state = $1, output = $2::jsonb, error = $3, updated_at = NOW()
+            SET state = $1, output = $2, error = $3, updated_at = NOW()
             WHERE instance_id = $4::uuid
             """,
             state.value,
-            json.dumps(output) if output else None,
+            output,
             error,
             instance_id,
         )
@@ -119,7 +134,7 @@ class PgStateBackend(OrchestratorBackend):
             step_name,
             step_index,
         )
-        return dict(row["output"]) if row is not None else None
+        return row["output"] if row is not None else None
 
     async def save_step_result(
         self,
@@ -133,15 +148,15 @@ class PgStateBackend(OrchestratorBackend):
             """
             INSERT INTO pyflows.step_results
                 (instance_id, step_name, step_index, state, input, output, completed_at)
-            VALUES ($1::uuid, $2, $3, 'completed', $4::jsonb, $5::jsonb, NOW())
+            VALUES ($1::uuid, $2, $3, 'completed', $4, $5, NOW())
             ON CONFLICT (instance_id, step_name, step_index)
             DO UPDATE SET state = 'completed', output = EXCLUDED.output, completed_at = NOW()
             """,
             instance_id,
             step_name,
             step_index,
-            json.dumps(input_data),
-            json.dumps(output),
+            input_data,
+            output,
         )
 
     async def save_step_error(
@@ -157,14 +172,14 @@ class PgStateBackend(OrchestratorBackend):
             """
             INSERT INTO pyflows.step_results
                 (instance_id, step_name, step_index, state, input, error, attempt)
-            VALUES ($1::uuid, $2, $3, 'failed', $4::jsonb, $5, $6)
+            VALUES ($1::uuid, $2, $3, 'failed', $4, $5, $6)
             ON CONFLICT (instance_id, step_name, step_index)
             DO UPDATE SET state = 'failed', error = EXCLUDED.error, attempt = EXCLUDED.attempt
             """,
             instance_id,
             step_name,
             step_index,
-            json.dumps(input_data),
+            input_data,
             error,
             attempt,
         )

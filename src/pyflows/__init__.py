@@ -16,6 +16,7 @@ from pyflows.exceptions import (
     WorkflowAlreadyExistsError,
     WorkflowNotFoundError,
 )
+from pyflows.logger import configure_default_logging, get_logger
 from pyflows.plugins import LoggingPlugin, PyflowsPlugin, StepEvent, WorkflowEvent
 from pyflows.registry import WorkflowRegistry
 from pyflows.sql_exporter import DryRunResult, SqlExporter, StepSql
@@ -41,25 +42,28 @@ __all__ = [
     # Config + telemetry
     "PyflowsConfig",
     "PyflowsTelemetry",
-    # Plugin system
-    "PyflowsPlugin",
-    "LoggingPlugin",
-    "WorkflowEvent",
-    "StepEvent",
     # Worker
     "WorkflowWorker",
     # SQL exporter
     "SqlExporter",
     "DryRunResult",
     "StepSql",
+    # Plugin system
+    "PyflowsPlugin",
+    "LoggingPlugin",
+    "WorkflowEvent",
+    "StepEvent",
+    # Logger
+    "get_logger",
+    "configure_default_logging",
     # ABCs
     "OrchestratorBackend",
     "QueueBackend",
     "SchedulerBackend",
     # Concrete backends
+    "PgCronBackend",
     "PgDurableBackend",
     "PgmqBackend",
-    "PgCronBackend",
     "PgStateBackend",
     # Types
     "WorkflowState",

@@ -6,183 +6,204 @@
 
 > Durable workflow engine SDK for Python + Postgres
 
-pyflows lets you write long-running, fault-tolerant workflows as plain async Python functions — backed entirely by your existing Postgres database. No new infrastructure, no message broker, no separate orchestration service.
+pyflows lets you write long-running, fault-tolerant workflows as plain async Python functions — backed entirely by your existing Postgres database. No extra infrastructure, no separate orchestration service, no new runtime to operate.
 
 > [!WARNING]
-> **Early development (alpha).** The core SDK API (`@step`, `@workflow`, worker) is under active development. The types, exceptions, and backend ABCs shown below are stable. Everything marked "planned API" reflects the target design and will change before 1.0.
+> **Early development (alpha).** The core API is stabilizing but not yet 1.0. Expect breaking changes before the first stable release.
 
 ## How it works
 
-pyflows compiles your Python workflow functions into [pg_durable](https://github.com/microsoft/pg_durable) DSL — a durable execution engine that runs inside Postgres. Each step is dispatched via [pgmq](https://github.com/tembo-io/pgmq). A Python async worker processes steps and signals completion back to the orchestrator.
+Each workflow step is persisted to Postgres before execution. If the process crashes mid-run, the worker replays from the last checkpoint — re-executing only the steps that haven't completed. All state, retries, and scheduling live in the database.
 
 ```text
-@workflow fn   →   pg_durable (orchestration)
-                        ↓
-                   pgmq (step queue)
-                        ↓
-              Python async worker (step executor)
-                        ↓
-                   df.signal() (resume)
+@workflow fn  →  WorkflowApp.start()
+                     ↓  enqueues to pgmq
+              Python async worker
+                     ↓  executes steps
+              PgStateBackend  ←→  Postgres
 ```
 
-Durability, retries, and scheduling live at the database level — not in process memory that disappears on restart.
+## Quick start
 
-## Planned API
+```bash
+docker compose up -d   # start Postgres with pgmq
+uv add pyflows
+```
 
 ```python
-# planned API — not yet implemented
+import asyncio
+from pydantic import BaseModel
+from pyflows import PyflowsConfig, RetryConfig, StepContext, WorkflowApp, WorkflowContext
+
+config = PyflowsConfig(dsn="postgresql://user:pass@localhost:5432/mydb", otel_enabled=False)
+app = WorkflowApp(config=config)
+
+
+class OrderInput(BaseModel):
+    order_id: str
+    amount: float
+
+
+class OrderResult(BaseModel):
+    charged: bool
+    confirmation: str
+
+
+@app.step(retry=RetryConfig(max_retries=3, initial_delay_seconds=1.0))
+async def charge_payment(ctx: StepContext, input: OrderInput) -> OrderResult:
+    # call your payment API here
+    return OrderResult(charged=True, confirmation=f"CHG-{input.order_id}")
+
+
 @app.workflow()
-async def remediate_incident(ctx: WorkflowContext, input: IncidentInput) -> RemediationResult:
-    health = await ctx.step(check_service_health, input.service_id)
-    if not health.ok:
-        await ctx.step(restart_service, input.service_id, retry=RetryConfig(max_retries=5))
-    return await ctx.step(verify_recovery, input.service_id)
+async def process_order(ctx: WorkflowContext, input: OrderInput) -> OrderResult:
+    return await ctx.step(charge_payment, input)
+
+
+async def main() -> None:
+    await app.initialize()
+    instance_id = await app.start(process_order, OrderInput(order_id="ORD-1", amount=99.0))
+    await app.process_once()
+    status = await app.get_status(instance_id)
+    print(status.state, status.output)
+    await app.close()
+
+asyncio.run(main())
 ```
 
 ## Features
 
-- **Durable by default** — workflows survive restarts and crashes; all state is in Postgres
-- **Pure async Python** — write steps as `async def`, compose with `await ctx.step(...)`
+- **Checkpoint replay** — workflows survive crashes; completed steps are never re-executed
 - **Typed end-to-end** — step inputs and outputs are Pydantic models; no `dict[str, Any]` at the boundary
 - **Configurable retries** — per-step `RetryConfig` with exponential backoff and jitter
-- **Built-in scheduling** — trigger workflows on a cron via `pg_cron` *(planned)*
-- **LISTEN/NOTIFY wake-up** — zero-poll idle; workers wake instantly when work arrives *(planned)*
-- **Swappable backends** — orchestrator, queue, and scheduler are ABCs; bring your own implementation
-- **Plugin hooks** — `before_step`, `after_step`, `on_step_error`, `before_workflow`, `after_workflow` *(planned)*
+- **Plugin hooks** — `before_workflow`, `after_workflow`, `on_workflow_error`, `before_step`, `after_step`, `on_step_error`
+- **Automatic migrations** — `await app.initialize()` applies schema migrations; no manual SQL required
+- **pg_cron scheduler** — trigger recurring workflows with cron expressions via `PgCronBackend`
+- **Swappable backends** — orchestrator, queue, and scheduler implement ABCs; swap without touching workflow code
+- **OpenTelemetry** — built-in span management for workflows and steps
 
-## Requirements
-
-**Python:** 3.13+
-
-**PostgreSQL extensions** (15+):
-
-| Extension | Purpose | Required |
-| --------- | ------- | -------- |
-| [`pg_durable`](https://github.com/microsoft/pg_durable) | Durable workflow orchestration | Yes |
-| [`pgmq`](https://github.com/tembo-io/pgmq) | Message queue for step dispatch | Yes |
-| [`pg_cron`](https://github.com/citusdata/pg_cron) | Cron-based workflow triggers | Optional |
-
-### Installing Postgres extensions
-
-The fastest way to get all three running locally is with [Tembo's Docker image](https://github.com/tembo-io/tembo), which ships pgmq and pg_cron pre-installed:
-
-```bash
-docker run -d \
-  -e POSTGRES_PASSWORD=postgres \
-  -p 5432:5432 \
-  quay.io/tembo/standard-cnpg:latest
-```
-
-For pg_durable, follow the [installation guide](https://github.com/microsoft/pg_durable#installation) and enable it in your database:
-
-```sql
-CREATE EXTENSION pg_durable;
-CREATE EXTENSION pgmq;
-CREATE EXTENSION pg_cron;  -- optional
-```
-
-## Installation
-
-```bash
-pip install pyflows
-```
-
-With [uv](https://docs.astral.sh/uv/):
-
-```bash
-uv add pyflows
-```
-
-With optional FastAPI integration:
-
-```bash
-uv add "pyflows[fastapi]"
-```
-
-## What works today
-
-The backend ABCs, types, and exceptions are stable and importable:
+## Plugin system
 
 ```python
-from pyflows import (
-    # Backend ABCs (implement your own or use the built-in stubs)
-    OrchestratorBackend,
-    QueueBackend,
-    SchedulerBackend,
-    # Concrete implementations (stubs — M2+ for full implementation)
-    PgDurableBackend,
-    PgmqBackend,
-    PgCronBackend,
-    # Types
-    WorkflowStatus,
-    WorkflowState,
-    QueueMessage,
-    ScheduledJob,
-    RetryConfig,
-    StepConfig,
-    # Exceptions
-    PyflowsError,
-    WorkflowNotFoundError,
-    WorkflowAlreadyExistsError,
-    StepExecutionError,
-    BackendNotInitializedError,
-    SchedulerJobNotFoundError,
-)
+from pyflows import LoggingPlugin, PyflowsPlugin, StepEvent, WorkflowEvent
+
+# Built-in: log all lifecycle events
+app.register_plugin(LoggingPlugin())
+
+# Custom: implement any subset of hooks
+class MetricsPlugin(PyflowsPlugin):
+    async def after_step(self, event: StepEvent, result: object) -> None:
+        metrics.record("step.completed", tags={"step": event.step_name})
+
+    async def on_workflow_error(self, event: WorkflowEvent, error: Exception) -> None:
+        metrics.record("workflow.failed", tags={"workflow": event.workflow_name})
+
+app.register_plugin(MetricsPlugin())
 ```
 
-## Architecture
-
-| Component     | Default implementation | Interface             |
-| ------------- | ---------------------- | --------------------- |
-| Orchestration | `PgDurableBackend`     | `OrchestratorBackend` |
-| Step queue    | `PgmqBackend`          | `QueueBackend`        |
-| Scheduling    | `PgCronBackend`        | `SchedulerBackend`    |
-
-All three interfaces are abstract base classes — you can swap in any implementation.
-
-### Execution modes
-
-**Pull (default):** pg_durable enqueues the step → pgmq.send() → LISTEN/NOTIFY wakes the Python worker → step runs → `df.signal()` resumes the workflow.
-
-**Push (opt-in):** pg_durable calls `df.http()` → hits a FastAPI endpoint directly (requires DB network access to the app).
+Plugins are called in registration order. A plugin that raises never affects other plugins or the workflow itself.
 
 ## Retry configuration
 
 ```python
 from pyflows import RetryConfig
 
-RetryConfig(
-    max_retries=5,
-    backoff="exponential",      # "exponential" or "linear"
-    initial_delay_seconds=1.0,
-    max_delay_seconds=60.0,
-    jitter=True,
-)
+# Per-step retry
+@app.step(retry=RetryConfig(max_retries=5, initial_delay_seconds=2.0, max_delay_seconds=60.0))
+async def my_step(ctx, input: MyInput) -> MyOutput: ...
+
+# Workflow-level defaults (applied to all steps unless overridden)
+@app.workflow(step_defaults=RetryConfig(max_retries=2))
+async def my_workflow(ctx, input: MyInput) -> MyOutput: ...
 ```
 
-## Roadmap
+## Scheduling with pg_cron
 
-- [x] M1 — Project scaffold: backend ABCs, Pydantic types, exception hierarchy
-- [ ] M2 — Core SDK: `@step`, `@workflow`, `WorkflowContext`, step registry
-- [ ] M3 — Compiler: Python workflow → pg_durable DSL
-- [ ] M4 — Worker: pgmq poller, LISTEN/NOTIFY, async step executor
-- [ ] M5 — FastAPI integration: management router, push endpoint
-- [ ] M6 — Plugin system: hooks ABC, OpenTelemetry + logging built-ins
-- [ ] M7 — Migrations + pg_cron scheduler
-- [ ] M8 — AI SRE example + full documentation
+```python
+from pyflows import PgCronBackend
+
+scheduler = PgCronBackend(dsn=config.dsn)
+await scheduler.initialize()
+
+# Schedule a workflow to run every hour
+job_id = await scheduler.schedule(
+    job_name="hourly_health_check",
+    cron="0 * * * *",
+    command="SELECT pyflows.enqueue_workflow('health_check', '{}')",
+)
+
+jobs = await scheduler.list_jobs()
+await scheduler.unschedule(job_id)
+```
+
+## Backend abstraction
+
+Every infrastructure concern is behind an ABC in `backends/base.py`. Swap backends without touching workflow code:
+
+| Component | Default | Interface |
+| --------- | ------- | --------- |
+| State + checkpoints | `PgStateBackend` | `OrchestratorBackend` |
+| Step queue | `PgmqBackend` | `QueueBackend` |
+| Cron scheduling | `PgCronBackend` | `SchedulerBackend` |
+
+```python
+# Bring your own queue backend
+class RedisQueueBackend(QueueBackend):
+    ...
+
+app = WorkflowApp(config=config)
+# Use custom backend by injecting into WorkflowWorker directly
+```
+
+## Requirements
+
+**Python:** 3.13+
+
+**Postgres extensions** (15+):
+
+| Extension | Purpose | Required |
+| --------- | ------- | -------- |
+| [`pgmq`](https://github.com/tembo-io/pgmq) | Step queue | Yes |
+| [`pg_cron`](https://github.com/citusdata/pg_cron) | Cron scheduling | Optional |
+
+The bundled `docker-compose.yml` starts a Postgres instance with `pgmq` pre-installed:
+
+```bash
+docker compose up -d
+```
+
+## Installation
+
+```bash
+pip install pyflows
+# or
+uv add pyflows
+```
 
 ## Development
 
 ```bash
-# Install dependencies (including dev extras)
-uv sync
-
-# Run tests
-uv run pytest
-
-# Lint
-uv run ruff check src/
+uv sync                          # install deps
+uv run pytest tests/unit/        # unit tests (no DB needed)
+docker compose up -d             # start Postgres
+uv run pytest tests/e2e/         # E2E tests
+uv run ruff check src/ tests/    # lint
 ```
+
+## AI SRE example
+
+See [`examples/ai_sre/workflow.py`](examples/ai_sre/workflow.py) for a full incident response workflow: health check → AI diagnosis → auto-remediation, with retries, plugin hooks, and typed I/O.
+
+## Roadmap
+
+- [x] M1 — Project scaffold: backend ABCs, Pydantic types, exception hierarchy
+- [x] M2 — Core SDK: `WorkflowApp`, `@step`, `@workflow`, `WorkflowContext`, replay engine
+- [x] M3 — SqlExporter: Python workflow → pg_durable DSL (AST-based)
+- [x] M4 — E2E test suite: basic, retry, monitor/cancel (Docker-based)
+- [x] M6 — Plugin system: `PyflowsPlugin` ABC, `LoggingPlugin`, lifecycle hooks
+- [x] M7 — Migrations + pg_cron scheduler: versioned schema migrations, `PgCronBackend`
+- [ ] M5 — FastAPI integration: push endpoint (deferred; pull mode works without it)
+- [ ] M8 — Full documentation + PyPI release
 
 ## License
 

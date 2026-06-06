@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pathlib
 import urllib.parse
 from collections.abc import Callable
 from typing import Any
@@ -8,13 +7,12 @@ from typing import Any
 from pyflows.backends.pg_state import PgStateBackend
 from pyflows.backends.pgmq import PgmqBackend
 from pyflows.config import PyflowsConfig
+from pyflows.migrations import run_migrations
 from pyflows.plugins import PyflowsPlugin
 from pyflows.registry import WorkflowRegistry
 from pyflows.telemetry import PyflowsTelemetry
 from pyflows.types import RetryConfig, WorkflowState, WorkflowStatus
 from pyflows.worker import WorkflowWorker
-
-_SCHEMA_SQL = (pathlib.Path(__file__).parent / "schema.sql").read_text()
 
 
 class WorkflowApp:
@@ -31,14 +29,8 @@ class WorkflowApp:
         self._initialized = False
 
     async def initialize(self) -> None:
-        """Apply DB schema, open connection pools, register workflows."""
-        import asyncpg
-
-        conn = await asyncpg.connect(self.config.dsn)
-        try:
-            await conn.execute(_SCHEMA_SQL)
-        finally:
-            await conn.close()
+        """Apply pending DB migrations, open connection pools, register workflows."""
+        await run_migrations(self.config.dsn)
 
         self._state = PgStateBackend(dsn=self.config.dsn)
         await self._state.initialize()

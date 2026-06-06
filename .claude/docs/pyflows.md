@@ -81,8 +81,8 @@ Tables: `df.instances`, `df.nodes`. No Python client exists — we call these vi
 - [x] M3: SqlExporter — AST-based pg_durable DSL generation, dry-run, export_all (7 unit tests passing)
 - [x] M4: E2E test suite — basic, retry, monitor/cancel (skip when Docker not running); run with `docker compose up -d` then `uv run pytest tests/e2e/`
 - [ ] M5: FastAPI integration — push endpoint only (deferred; pull mode works without it)
-- [ ] M6: Plugin system — hooks ABC, OTel + logging built-ins
-- [ ] M7: Migrations + pg_cron scheduler
+- [x] M6: Plugin system — PyflowsPlugin ABC, LoggingPlugin, lifecycle hooks (before/after/error) in worker + context, fire() helper swallows plugin errors (10 unit tests)
+- [x] M7: Migrations + pg_cron scheduler — migration runner (run_migrations, schema_migrations table, versioned SQL), PgCronBackend implemented with asyncpg, pg_state migrated to asyncpg with JSONB codecs (16 unit tests)
 - [ ] M8: AI SRE example + README — shareable
 
 ## README
