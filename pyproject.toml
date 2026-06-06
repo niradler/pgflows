@@ -1,13 +1,11 @@
 [project]
 name = "pyflows"
 version = "0.1.0"
-description = "Add your description here"
+description = "Durable workflow engine SDK for Python + Postgres"
 readme = "README.md"
 license = { text = "MIT" }
-authors = [
-    { name = "Nir Adler", email = "me@niradler.com" }
-]
-keywords = []
+authors = [{ name = "Nir Adler", email = "me@niradler.com" }]
+keywords = ["workflow", "durable", "postgres", "async"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -20,8 +18,16 @@ requires-python = ">=3.13"
 dependencies = [
     "pydantic",
     "psycopg[binary]",
+    "psycopg-pool",
+    "asyncpg",
     "tembo-pgmq-python",
+    "opentelemetry-api",
+    "opentelemetry-sdk",
+    "opentelemetry-exporter-otlp-proto-grpc",
 ]
+
+[project.optional-dependencies]
+fastapi = ["fastapi", "uvicorn[standard]"]
 
 [project.urls]
 Homepage = "https://github.com/niradler/pyflows"
@@ -35,7 +41,12 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "pytest-asyncio",
+    "anyio",
     "ruff>=0.9",
+    "fastapi",
+    "uvicorn[standard]",
+    "httpx",
 ]
 
 [tool.ruff]
@@ -43,3 +54,6 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

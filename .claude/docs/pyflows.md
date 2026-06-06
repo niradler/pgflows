@@ -85,6 +85,17 @@ Tables: `df.instances`, `df.nodes`. No Python client exists — we call these vi
 - [ ] M7: Migrations + pg_cron scheduler
 - [ ] M8: AI SRE example + README — shareable
 
+## README
+
+Written and reviewed. Key design decisions baked in:
+
+- Alpha warning admonition — clearly marks the planned vs working API split
+- "What works today" section shows stable imports (types, backends, exceptions)
+- Planned API section shows the target decorator syntax — clearly labeled not yet implemented
+- Postgres extension setup section (Docker + SQL)
+- FastAPI optional install documented
+- Two subagent reviews completed; review files saved to `.claude/docs/readme-review-content.md` and `.claude/docs/readme-review-clarity.md`
+
 ## M1 state (done)
 
 ```text
