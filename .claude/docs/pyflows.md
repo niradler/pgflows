@@ -79,7 +79,7 @@ Tables: `df.instances`, `df.nodes`. No Python client exists — we call these vi
 - [x] M1: Project scaffold — pyproject.toml, src layout, uv, backends ABCs + stubs
 - [x] M2: Core SDK — WorkflowApp, WorkflowContext (replay), WorkflowWorker, WorkflowRegistry, @step/@workflow decorators, OTel telemetry, PgStateBackend, PgmqBackend (21 unit tests passing)
 - [x] M3: SqlExporter — AST-based pg_durable DSL generation, dry-run, export_all (7 unit tests passing)
-- [ ] M4: Worker — pgmq poller, LISTEN/NOTIFY, step executor, df.signal; asyncio.run_in_executor for CPU steps
+- [x] M4: E2E test suite — basic, retry, monitor/cancel (skip when Docker not running); run with `docker compose up -d` then `uv run pytest tests/e2e/`
 - [ ] M5: FastAPI integration — push endpoint only (deferred; pull mode works without it)
 - [ ] M6: Plugin system — hooks ABC, OTel + logging built-ins
 - [ ] M7: Migrations + pg_cron scheduler
