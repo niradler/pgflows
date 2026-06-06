@@ -1,7 +1,5 @@
-import asyncio
 import os
 import pathlib
-import sys
 
 import asyncpg
 import pytest
@@ -14,14 +12,6 @@ TEST_DSN = os.getenv(
 SCHEMA_SQL = (
     pathlib.Path(__file__).parent.parent / "src" / "pyflows" / "schema.sql"
 ).read_text()
-
-
-if sys.platform == "win32":
-
-    @pytest.fixture(scope="session")
-    def event_loop_policy():
-        """Force SelectorEventLoop on Windows — required by psycopg async."""
-        return asyncio.WindowsSelectorEventLoopPolicy()
 
 
 @pytest.fixture(scope="session")

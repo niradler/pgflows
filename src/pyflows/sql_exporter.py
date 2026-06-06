@@ -1,0 +1,106 @@
+from __future__ import annotations
+
+import ast
+import inspect
+import textwrap
+from dataclasses import dataclass, field
+from typing import Any
+
+from pyflows.registry import WorkflowRegistry
+
+
+@dataclass
+class StepSql:
+    step_name: str
+    http_url: str
+    sql_fragment: str
+
+
+@dataclass
+class DryRunResult:
+    workflow_name: str
+    steps: list[StepSql]
+    sql: str
+    input_schema: dict[str, Any] = field(default_factory=dict)
+
+
+class SqlExporter:
+    """Generate pg_durable SQL DSL from registered workflow definitions.
+
+    Each step becomes a df.http() call to the push-mode step endpoint.
+    The exported SQL can be imported into any Postgres with pg_durable to
+    transfer workflow definitions from dev → prod without code deployment.
+    """
+
+    def __init__(self, registry: WorkflowRegistry, base_url: str) -> None:
+        self._registry = registry
+        self._base_url = base_url.rstrip("/")
+
+    def export_workflow(self, workflow_name: str) -> str:
+        """Return pg_durable SQL that starts this workflow in push mode."""
+        steps = self._collect_steps(workflow_name)
+        dsl = self._build_dsl(steps, workflow_name)
+        return textwrap.dedent(f"""\
+            -- pyflows export: {workflow_name}
+            SELECT df.setvar('base_url', '{self._base_url}');
+            SELECT df.start(
+                {dsl},
+                '{workflow_name}'
+            );
+        """)
+
+    def dry_run(self, workflow_name: str, input_data: dict[str, Any] | None = None) -> DryRunResult:
+        """Trace workflow structure without executing. Returns steps + SQL."""
+        steps = self._collect_steps(workflow_name)
+        dsl = self._build_dsl(steps, workflow_name)
+        sql = textwrap.dedent(f"""\
+            SELECT df.setvar('base_url', '{self._base_url}');
+            SELECT df.start({dsl}, '{workflow_name}');
+        """)
+        return DryRunResult(
+            workflow_name=workflow_name,
+            steps=steps,
+            sql=sql,
+            input_schema=input_data or {},
+        )
+
+    def export_all(self) -> str:
+        """Export all registered workflows to a single SQL file."""
+        parts = [f"-- pyflows bulk export\n-- base_url: {self._base_url}\n"]
+        for name in self._registry.list_workflows():
+            parts.append(self.export_workflow(name))
+        return "\n".join(parts)
+
+    def _collect_steps(self, workflow_name: str) -> list[StepSql]:
+        """Introspect the workflow function via AST to find ctx.step() calls in order."""
+        defn = self._registry.get_workflow(workflow_name)
+        source = textwrap.dedent(inspect.getsource(defn.fn))
+        tree = ast.parse(source)
+
+        steps: list[StepSql] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Await):
+                continue
+            call = node.value
+            if not isinstance(call, ast.Call):
+                continue
+            func = call.func
+            if not (isinstance(func, ast.Attribute) and func.attr == "step"):
+                continue
+            if not call.args:
+                continue
+            fn_node = call.args[0]
+            step_name = fn_node.id if isinstance(fn_node, ast.Name) else "unknown"
+            http_url = f"{self._base_url}/steps/{step_name}"
+            # Use pg_durable template var syntax for base_url substitution
+            fragment = (
+                f"df.http('{{{{base_url}}}}/steps/{step_name}', "
+                f"'POST', '{{\"step\": \"{step_name}\"}}')"
+            )
+            steps.append(StepSql(step_name=step_name, http_url=http_url, sql_fragment=fragment))
+        return steps
+
+    def _build_dsl(self, steps: list[StepSql], label: str) -> str:
+        if not steps:
+            return f"'SELECT ''workflow {label} has no steps'''"
+        return "\n    ~> ".join(s.sql_fragment for s in steps)

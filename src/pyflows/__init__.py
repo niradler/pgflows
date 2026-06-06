@@ -17,6 +17,7 @@ from pyflows.exceptions import (
     WorkflowNotFoundError,
 )
 from pyflows.registry import WorkflowRegistry
+from pyflows.sql_exporter import DryRunResult, SqlExporter, StepSql
 from pyflows.telemetry import PyflowsTelemetry
 from pyflows.types import (
     QueueMessage,
@@ -41,6 +42,10 @@ __all__ = [
     "PyflowsTelemetry",
     # Worker
     "WorkflowWorker",
+    # SQL exporter
+    "SqlExporter",
+    "DryRunResult",
+    "StepSql",
     # ABCs
     "OrchestratorBackend",
     "QueueBackend",
