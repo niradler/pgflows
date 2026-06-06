@@ -1,3 +1,6 @@
+import asyncio
+
+import asyncpg
 import pytest
 
 from pyflows.backends.pg_state import PgStateBackend
@@ -9,6 +12,11 @@ TEST_DSN = "postgresql://pyflows:pyflows@localhost:5433/pyflows_test"
 
 @pytest.fixture
 async def state():
+    try:
+        conn = await asyncio.wait_for(asyncpg.connect(TEST_DSN), timeout=2)
+        await conn.close()
+    except Exception:
+        pytest.skip("Postgres not available (start docker compose up -d)")
     backend = PgStateBackend(dsn=TEST_DSN)
     await backend.initialize()
     yield backend
