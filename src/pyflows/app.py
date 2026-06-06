@@ -8,6 +8,7 @@ from typing import Any
 from pyflows.backends.pg_state import PgStateBackend
 from pyflows.backends.pgmq import PgmqBackend
 from pyflows.config import PyflowsConfig
+from pyflows.plugins import PyflowsPlugin
 from pyflows.registry import WorkflowRegistry
 from pyflows.telemetry import PyflowsTelemetry
 from pyflows.types import RetryConfig, WorkflowState, WorkflowStatus
@@ -22,6 +23,7 @@ class WorkflowApp:
     def __init__(self, config: PyflowsConfig) -> None:
         self.config = config
         self.registry = WorkflowRegistry()
+        self._plugins: list[PyflowsPlugin] = []
         self._telemetry: PyflowsTelemetry | None = None
         self._state: PgStateBackend | None = None
         self._queue: PgmqBackend | None = None
@@ -67,6 +69,7 @@ class WorkflowApp:
             queue_backend=self._queue,
             telemetry=self._telemetry,
             queue_name=self.config.workflow_queue,
+            plugins=self._plugins,
         )
         self._initialized = True
 
@@ -74,14 +77,11 @@ class WorkflowApp:
         """Enqueue a workflow run. Returns instance_id."""
         self._assert_initialized()
         defn = self.registry.get_workflow(workflow_fn.__name__)
-        instance_id = await self._state.create_instance(defn.name, input_model.model_dump())  # type: ignore[union-attr]
+        input_dict = input_model.model_dump()
+        instance_id = await self._state.create_instance(defn.name, input_dict)  # type: ignore[union-attr]
         await self._queue.enqueue(  # type: ignore[union-attr]
             self.config.workflow_queue,
-            {
-                "workflow_name": defn.name,
-                "instance_id": instance_id,
-                "input": input_model.model_dump(),
-            },
+            {"workflow_name": defn.name, "instance_id": instance_id, "input": input_dict},
         )
         return instance_id
 
@@ -130,6 +130,10 @@ class WorkflowApp:
             self.registry.register_workflow(fn, name=name, step_defaults=step_defaults)
             return fn
         return decorator
+
+    def register_plugin(self, plugin: PyflowsPlugin) -> None:
+        """Register a plugin to receive workflow and step lifecycle hooks."""
+        self._plugins.append(plugin)
 
     def step(
         self,

@@ -5,6 +5,7 @@ import traceback
 from typing import TYPE_CHECKING
 
 from pyflows.context import WorkflowContext
+from pyflows.plugins import PyflowsPlugin, WorkflowEvent, fire
 from pyflows.telemetry import PyflowsTelemetry
 from pyflows.types import WorkflowState
 
@@ -25,6 +26,7 @@ class WorkflowWorker:
         telemetry: PyflowsTelemetry,
         queue_name: str = "pyflows_workflows",
         batch_size: int = 5,
+        plugins: list[PyflowsPlugin] | None = None,
     ) -> None:
         self._registry = registry
         self._state = state_backend
@@ -32,6 +34,7 @@ class WorkflowWorker:
         self._telemetry = telemetry
         self._queue_name = queue_name
         self._batch_size = batch_size
+        self._plugins = plugins or []
         self._running = False
 
     async def process_batch(self) -> int:
@@ -66,9 +69,11 @@ class WorkflowWorker:
             return
 
         input_model = defn.input_type.model_validate(raw_input)
+        wf_event = WorkflowEvent(instance_id=instance_id, workflow_name=workflow_name)
 
         with self._telemetry.workflow_span(workflow_name, instance_id):
             await self._state.update_instance_state(instance_id, WorkflowState.RUNNING)
+            await fire(self._plugins, "before_workflow", wf_event)
             try:
                 ctx = WorkflowContext(
                     instance_id=instance_id,
@@ -76,16 +81,19 @@ class WorkflowWorker:
                     state_backend=self._state,
                     telemetry=self._telemetry,
                     step_defaults=defn.step_defaults,
+                    plugins=self._plugins,
                 )
                 result = await defn.fn(ctx, input_model)
                 output = result.model_dump() if hasattr(result, "model_dump") else result
                 await self._state.update_instance_state(
                     instance_id, WorkflowState.COMPLETED, output=output
                 )
+                await fire(self._plugins, "after_workflow", wf_event, result)
                 await self._queue.ack(self._queue_name, msg.message_id)
-            except Exception:
+            except Exception as exc:
                 error = traceback.format_exc()
                 await self._state.update_instance_state(
                     instance_id, WorkflowState.FAILED, error=error
                 )
+                await fire(self._plugins, "on_workflow_error", wf_event, exc)
                 await self._queue.nack(self._queue_name, msg.message_id)

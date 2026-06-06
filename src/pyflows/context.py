@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel
 
 from pyflows.exceptions import StepExecutionError
+from pyflows.plugins import PyflowsPlugin, StepEvent, fire
 from pyflows.telemetry import PyflowsTelemetry
 from pyflows.types import RetryConfig
 
@@ -25,12 +26,14 @@ class WorkflowContext:
         state_backend: PgStateBackend,
         telemetry: PyflowsTelemetry,
         step_defaults: RetryConfig | None = None,
+        plugins: list[PyflowsPlugin] | None = None,
     ) -> None:
         self.instance_id = instance_id
         self.workflow_name = workflow_name
         self._state = state_backend
         self._telemetry = telemetry
         self._step_defaults = step_defaults or RetryConfig()
+        self._plugins = plugins or []
         self._step_counter: dict[str, int] = {}
 
     async def step(
@@ -54,23 +57,33 @@ class WorkflowContext:
 
         retry_cfg = retry or self._step_defaults
         last_error: Exception | None = None
+        input_dict = input_model.model_dump()
 
         with self._telemetry.step_span(self.instance_id, step_name, step_index):
             for attempt in range(1, retry_cfg.max_retries + 2):
+                event = StepEvent(
+                    instance_id=self.instance_id,
+                    workflow_name=self.workflow_name,
+                    step_name=step_name,
+                    step_index=step_index,
+                    attempt=attempt,
+                )
+                await fire(self._plugins, "before_step", event, input_model)
                 try:
                     result = await fn(StepContext(self.instance_id, step_name), input_model)
                     output = result.model_dump() if isinstance(result, BaseModel) else result
                     await self._state.save_step_result(
-                        self.instance_id, step_name, step_index,
-                        input_model.model_dump(), output,
+                        self.instance_id, step_name, step_index, input_dict, output,
                     )
+                    await fire(self._plugins, "after_step", event, result)
                     return result
                 except Exception as exc:
                     last_error = exc
                     await self._state.save_step_error(
                         self.instance_id, step_name, step_index,
-                        input_model.model_dump(), traceback.format_exc(), attempt,
+                        input_dict, traceback.format_exc(), attempt,
                     )
+                    await fire(self._plugins, "on_step_error", event, exc)
                     if attempt <= retry_cfg.max_retries:
                         delay = min(
                             retry_cfg.initial_delay_seconds * (2 ** (attempt - 1)),

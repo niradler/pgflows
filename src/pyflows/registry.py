@@ -32,6 +32,15 @@ class WorkflowRegistry:
         self._workflows: dict[str, WorkflowDefinition] = {}
         self._steps: dict[str, StepDefinition] = {}
 
+    @staticmethod
+    def _extract_types(fn: Callable) -> tuple[type, type]:
+        """Return (input_type, output_type) from a workflow/step function signature."""
+        hints = get_type_hints(fn)
+        params = list(inspect.signature(fn).parameters.values())
+        # params[0] = ctx, params[1] = input
+        input_type = hints.get(params[1].name) if len(params) > 1 else dict
+        return input_type, hints.get("return", dict)
+
     def register_step(
         self,
         fn: Callable,
@@ -40,11 +49,7 @@ class WorkflowRegistry:
         timeout_seconds: float | None = None,
     ) -> StepDefinition:
         step_name = name or fn.__name__
-        hints = get_type_hints(fn)
-        params = list(inspect.signature(fn).parameters.values())
-        # params[0] = ctx, params[1] = input
-        input_type = hints.get(params[1].name) if len(params) > 1 else dict
-        output_type = hints.get("return", dict)
+        input_type, output_type = self._extract_types(fn)
         defn = StepDefinition(
             name=step_name,
             fn=fn,
@@ -63,10 +68,7 @@ class WorkflowRegistry:
         step_defaults: RetryConfig | None = None,
     ) -> WorkflowDefinition:
         wf_name = name or fn.__name__
-        hints = get_type_hints(fn)
-        params = list(inspect.signature(fn).parameters.values())
-        input_type = hints.get(params[1].name) if len(params) > 1 else dict
-        output_type = hints.get("return", dict)
+        input_type, output_type = self._extract_types(fn)
         defn = WorkflowDefinition(
             name=wf_name,
             fn=fn,

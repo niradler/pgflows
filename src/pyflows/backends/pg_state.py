@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import psycopg_pool
+import asyncpg
 
 from pyflows.backends.base import OrchestratorBackend
 from pyflows.exceptions import BackendNotInitializedError, WorkflowNotFoundError
@@ -11,72 +11,77 @@ from pyflows.types import WorkflowState, WorkflowStatus
 
 
 class PgStateBackend(OrchestratorBackend):
-    """Stores workflow instance and step checkpoint state in pyflows.* Postgres tables."""
+    """Stores workflow instance and step checkpoint state in pyflows.* Postgres tables.
+
+    Uses asyncpg connection pool. On Linux/macOS the psycopg3 AsyncConnectionPool may
+    be substituted; on Windows, psycopg3 async networking is incompatible due to libpq
+    returning CRT file descriptors that select.select() cannot monitor on Windows.
+    """
 
     def __init__(self, dsn: str, min_pool: int = 2, max_pool: int = 10) -> None:
         self._dsn = dsn
         self._min_pool = min_pool
         self._max_pool = max_pool
-        self._pool: psycopg_pool.AsyncConnectionPool | None = None
+        self._pool: asyncpg.Pool | None = None
 
     async def initialize(self) -> None:
-        self._pool = psycopg_pool.AsyncConnectionPool(
+        self._pool = await asyncpg.create_pool(
             self._dsn,
             min_size=self._min_pool,
             max_size=self._max_pool,
-            open=False,
         )
-        await self._pool.open()
 
     async def register_workflow(self, name: str, config: dict[str, Any]) -> None:
         await self._execute(
             """
             INSERT INTO pyflows.workflow_definitions (name, config)
-            VALUES (%s, %s)
+            VALUES ($1, $2::jsonb)
             ON CONFLICT (name) DO UPDATE SET config = EXCLUDED.config, updated_at = NOW()
             """,
-            (name, json.dumps(config)),
+            name,
+            json.dumps(config),
         )
 
     async def get_workflow_definition(self, name: str) -> dict[str, Any]:
         row = await self._fetchone(
-            "SELECT name, version, config FROM pyflows.workflow_definitions WHERE name = %s",
-            (name,),
+            "SELECT name, version, config FROM pyflows.workflow_definitions WHERE name = $1",
+            name,
         )
         if row is None:
             raise WorkflowNotFoundError(name)
-        return {"name": row[0], "version": row[1], "config": row[2]}
+        return {"name": row["name"], "version": row["version"], "config": row["config"]}
 
     async def create_instance(self, workflow_name: str, input_data: dict[str, Any]) -> str:
         row = await self._fetchone(
             """
             INSERT INTO pyflows.workflow_instances (workflow_name, input)
-            VALUES (%s, %s)
+            VALUES ($1, $2::jsonb)
             RETURNING instance_id::text
             """,
-            (workflow_name, json.dumps(input_data)),
+            workflow_name,
+            json.dumps(input_data),
         )
-        return row[0]
+        return row["instance_id"]  # type: ignore[index]
 
     async def get_instance(self, instance_id: str) -> WorkflowStatus:
         row = await self._fetchone(
             """
             SELECT instance_id, workflow_name, state, output, error, created_at, updated_at
             FROM pyflows.workflow_instances
-            WHERE instance_id = %s::uuid
+            WHERE instance_id = $1::uuid
             """,
-            (instance_id,),
+            instance_id,
         )
         if row is None:
             raise WorkflowNotFoundError(instance_id)
         return WorkflowStatus(
-            workflow_id=str(row[0]),
-            name=row[1],
-            state=WorkflowState(row[2]),
-            created_at=row[5],
-            updated_at=row[6],
-            output=row[3],
-            error=row[4],
+            workflow_id=str(row["instance_id"]),
+            name=row["workflow_name"],
+            state=WorkflowState(row["state"]),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            output=row["output"],
+            error=row["error"],
         )
 
     async def update_instance_state(
@@ -89,10 +94,13 @@ class PgStateBackend(OrchestratorBackend):
         await self._execute(
             """
             UPDATE pyflows.workflow_instances
-            SET state = %s, output = %s, error = %s, updated_at = NOW()
-            WHERE instance_id = %s::uuid
+            SET state = $1, output = $2::jsonb, error = $3, updated_at = NOW()
+            WHERE instance_id = $4::uuid
             """,
-            (state.value, json.dumps(output) if output else None, error, instance_id),
+            state.value,
+            json.dumps(output) if output else None,
+            error,
+            instance_id,
         )
 
     async def get_step_result(
@@ -104,12 +112,14 @@ class PgStateBackend(OrchestratorBackend):
         row = await self._fetchone(
             """
             SELECT output FROM pyflows.step_results
-            WHERE instance_id = %s::uuid AND step_name = %s AND step_index = %s
+            WHERE instance_id = $1::uuid AND step_name = $2 AND step_index = $3
               AND state = 'completed'
             """,
-            (instance_id, step_name, step_index),
+            instance_id,
+            step_name,
+            step_index,
         )
-        return row[0] if row else None
+        return dict(row["output"]) if row is not None else None
 
     async def save_step_result(
         self,
@@ -123,11 +133,15 @@ class PgStateBackend(OrchestratorBackend):
             """
             INSERT INTO pyflows.step_results
                 (instance_id, step_name, step_index, state, input, output, completed_at)
-            VALUES (%s::uuid, %s, %s, 'completed', %s, %s, NOW())
+            VALUES ($1::uuid, $2, $3, 'completed', $4::jsonb, $5::jsonb, NOW())
             ON CONFLICT (instance_id, step_name, step_index)
             DO UPDATE SET state = 'completed', output = EXCLUDED.output, completed_at = NOW()
             """,
-            (instance_id, step_name, step_index, json.dumps(input_data), json.dumps(output)),
+            instance_id,
+            step_name,
+            step_index,
+            json.dumps(input_data),
+            json.dumps(output),
         )
 
     async def save_step_error(
@@ -143,11 +157,16 @@ class PgStateBackend(OrchestratorBackend):
             """
             INSERT INTO pyflows.step_results
                 (instance_id, step_name, step_index, state, input, error, attempt)
-            VALUES (%s::uuid, %s, %s, 'failed', %s, %s, %s)
+            VALUES ($1::uuid, $2, $3, 'failed', $4::jsonb, $5, $6)
             ON CONFLICT (instance_id, step_name, step_index)
             DO UPDATE SET state = 'failed', error = EXCLUDED.error, attempt = EXCLUDED.attempt
             """,
-            (instance_id, step_name, step_index, json.dumps(input_data), error, attempt),
+            instance_id,
+            step_name,
+            step_index,
+            json.dumps(input_data),
+            error,
+            attempt,
         )
 
     async def list_instances(
@@ -159,32 +178,32 @@ class PgStateBackend(OrchestratorBackend):
         filters: list[str] = []
         params: list[Any] = []
         if workflow_name:
-            filters.append("workflow_name = %s")
             params.append(workflow_name)
+            filters.append(f"workflow_name = ${len(params)}")
         if state:
-            filters.append("state = %s")
             params.append(state.value)
-        where = ("WHERE " + " AND ".join(filters)) if filters else ""
+            filters.append(f"state = ${len(params)}")
         params.append(limit)
+        where = ("WHERE " + " AND ".join(filters)) if filters else ""
         rows = await self._fetchall(
             f"""
             SELECT instance_id, workflow_name, state, output, error, created_at, updated_at
             FROM pyflows.workflow_instances
             {where}
             ORDER BY created_at DESC
-            LIMIT %s
+            LIMIT ${len(params)}
             """,
-            tuple(params),
+            *params,
         )
         return [
             WorkflowStatus(
-                workflow_id=str(r[0]),
-                name=r[1],
-                state=WorkflowState(r[2]),
-                created_at=r[5],
-                updated_at=r[6],
-                output=r[3],
-                error=r[4],
+                workflow_id=str(r["instance_id"]),
+                name=r["workflow_name"],
+                state=WorkflowState(r["state"]),
+                created_at=r["created_at"],
+                updated_at=r["updated_at"],
+                output=r["output"],
+                error=r["error"],
             )
             for r in rows
         ]
@@ -216,21 +235,17 @@ class PgStateBackend(OrchestratorBackend):
         if self._pool is None:
             raise BackendNotInitializedError("PgStateBackend")
 
-    async def _execute(self, query: str, params: tuple = ()) -> None:
+    async def _execute(self, query: str, *params: Any) -> None:
         self._assert_initialized()
-        async with self._pool.connection() as conn:  # type: ignore[union-attr]
-            await conn.execute(query, params)
+        async with self._pool.acquire() as conn:  # type: ignore[union-attr]
+            await conn.execute(query, *params)
 
-    async def _fetchone(self, query: str, params: tuple = ()) -> tuple | None:
+    async def _fetchone(self, query: str, *params: Any) -> asyncpg.Record | None:
         self._assert_initialized()
-        async with self._pool.connection() as conn:  # type: ignore[union-attr]
-            async with conn.cursor() as cur:
-                await cur.execute(query, params)
-                return await cur.fetchone()
+        async with self._pool.acquire() as conn:  # type: ignore[union-attr]
+            return await conn.fetchrow(query, *params)
 
-    async def _fetchall(self, query: str, params: tuple = ()) -> list[tuple]:
+    async def _fetchall(self, query: str, *params: Any) -> list[asyncpg.Record]:
         self._assert_initialized()
-        async with self._pool.connection() as conn:  # type: ignore[union-attr]
-            async with conn.cursor() as cur:
-                await cur.execute(query, params)
-                return await cur.fetchall()
+        async with self._pool.acquire() as conn:  # type: ignore[union-attr]
+            return await conn.fetch(query, *params)
