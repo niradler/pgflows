@@ -26,7 +26,7 @@ Each workflow step is persisted to Postgres before execution. If the process cra
 ## Quick start
 
 ```bash
-docker compose up -d   # start Postgres with pgmq
+docker compose up -d   # start Postgres with pgmq + pg_durable
 uv add pgflows
 ```
 
@@ -279,15 +279,6 @@ jobs = await scheduler.list_jobs()
 await scheduler.unschedule(job_id)
 ```
 
-Check whether pg_durable is installed at runtime:
-
-```python
-await app.initialize()
-if app.pg_durable_available:
-    # scheduler and push-mode SQL export are usable
-    ...
-```
-
 ## Backend abstraction
 
 Every infrastructure concern is behind an ABC in `backends/base.py`. Swap backends without touching workflow code:
@@ -313,12 +304,12 @@ app = WorkflowApp(config=config)
 
 **Postgres extensions** (15+):
 
-| Extension | Purpose | Required |
-| --------- | ------- | -------- |
-| [`pgmq`](https://github.com/tembo-io/pgmq) | Step queue | Yes |
-| [`pg_durable` (`df`)](https://github.com/microsoft/pg_durable) | Cron scheduling, push-mode SQL export | Optional |
+| Extension | Purpose |
+| --------- | ------- |
+| [`pgmq`](https://github.com/tembo-io/pgmq) | Step queue — enqueue, dequeue, dead-letter |
+| [`pg_durable` (`df`)](https://github.com/microsoft/pg_durable) | Durable orchestration — graph execution, scheduling, push-mode SQL export, execution history |
 
-The bundled `docker-compose.yml` starts a Postgres instance with `pgmq` pre-installed:
+The bundled Postgres image ships both extensions pre-installed. To start it:
 
 ```bash
 docker compose up -d
