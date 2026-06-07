@@ -114,12 +114,22 @@ uv run pytest tests/e2e/test_live_dfpgmq.py -v   # auto-skips if df is absent
 The full two-container stack (DB + the example app server) lives in
 `docker-compose.full.yml` (`Dockerfile.app` + `examples/server.py`).
 
-Notes for push-mode internals:
+Notes for push-mode internals (learned by running real workflows on `df`):
 - `PgDurableClient.start()` **interpolates** the DSL expression into the SQL (so
   Postgres evaluates `~>`, `|=>`, `df.http()` operators); only `label`/`database`
   are bound params.
-- pgmq steps use a **poll-result table** (`pgflows.pgmq_step_results`), not
-  `df.wait_for_signal` — a fire-and-forget signal races the worker and is dropped if
-  it arrives before the waiter registers.
 - `df` substitutes `$capture` with the captured node's first-column value (not the
   `{"rows":[…]}` envelope), so step output threads as `input_expr="$capture::jsonb"`.
+- **Parallelism is pg_durable's job and it works**: `&` (join, wait ALL) and `|`
+  (race) run branches concurrently and durably; captures made inside a branch are
+  visible after the join. `~>` binds tighter than `&`/`|`, so the DSL builders fully
+  parenthesize a parallel group (`d >> (a & b)` → `d ~> ((a) & (b))`); otherwise it
+  mis-parses as `(d ~> a) & b` and the right branch misses `d`'s captures.
+- **Thread data with result captures (`|=>`), not many `df.setvar`s.** With >1
+  durable var set, `df` serializes the vars snapshot with non-deterministic key order
+  and a JOIN replay then fails as "nondeterministic: schedule mismatch". Keep one
+  config var (e.g. `input`) and pass everything else via captures.
+- pgmq steps use a **poll-result table** (`pgflows.pgmq_step_results`) rather than
+  `df.wait_for_signal`: a NOTIFY-woken worker can signal before `df` registers the
+  waiter, and that signal is dropped. The poll table is race-free (the row persists);
+  `wait_for_signal` remains the right primitive for genuinely external events.

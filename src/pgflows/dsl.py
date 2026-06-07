@@ -36,12 +36,18 @@ class DslNode:
         return DslNode(f"{self._sql}\n    ~> {other._sql}")
 
     def __and__(self, other: DslNode) -> DslNode:
-        """Parallel join (wait for ALL): (self) & (other)"""
-        return DslNode(f"({self._sql}) & ({other._sql})")
+        """Parallel join (wait for ALL): ((self) & (other))
+
+        Fully parenthesized so the group stays atomic when sequenced: `~>` binds
+        tighter than `&` in pg_durable, so `d >> (a & b)` must render as
+        `d ~> ((a) & (b))` — otherwise it parses as `(d ~> a) & b` and the right
+        branch never sees captures produced by `d`.
+        """
+        return DslNode(f"(({self._sql}) & ({other._sql}))")
 
     def __or__(self, other: DslNode) -> DslNode:
-        """Race (first wins): (self) | (other)"""
-        return DslNode(f"({self._sql}) | ({other._sql})")
+        """Race (first wins): ((self) | (other)) — fully parenthesized, see __and__."""
+        return DslNode(f"(({self._sql}) | ({other._sql}))")
 
     def capture(self, name: str) -> DslNode:
         """Capture result as named variable: (self) |=> 'name'"""

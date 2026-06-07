@@ -33,14 +33,14 @@ def test_and_parallel():
     a = DslNode("A")
     b = DslNode("B")
     result = a & b
-    assert str(result) == "(A) & (B)"
+    assert str(result) == "((A) & (B))"
 
 
 def test_or_race():
     a = DslNode("A")
     b = DslNode("B")
     result = a | b
-    assert str(result) == "(A) | (B)"
+    assert str(result) == "((A) | (B))"
 
 
 def test_capture():

@@ -82,6 +82,7 @@ asyncio.run(main())
 - **Configurable retries** — per-step `RetryConfig` with exponential or linear backoff and jitter
 - **Plugin hooks** — `before_workflow`, `after_workflow`, `on_workflow_error`, `before_step`, `after_step`, `on_step_error`
 - **Automatic migrations** — `await app.initialize()` applies schema migrations; no manual SQL required
+- **Two execution modes** — a Python pull worker, or push mode where pg_durable orchestrates and calls Python steps via `df.http()` or a pgmq+NOTIFY `StepWorker`
 - **Cron scheduler** — trigger recurring workflows via `PgCronBackend` (backed by pg_durable `df.wait_for_schedule`)
 - **Dead-letter queue** — failed workflows are archived to `pgmq.a_{queue}` instead of being re-queued indefinitely
 - **Worker coordination** — atomic `pending→running` claim prevents duplicate processing when multiple workers race on the same instance
@@ -169,6 +170,65 @@ The `compose()` call validates that every step name is registered, so typos rais
 # All registered workflows in one SQL file (dev → prod migration)
 sql = exporter.export_all()
 ```
+
+## Push-mode step bindings (pg_durable orchestrates, Python runs the steps)
+
+In push mode **pg_durable is the orchestrator** — it durably drives the graph
+(`~>` sequence, `&` parallel join, `|` race, `?>`/`!>` branch, loops) and calls out
+to your Python steps. There are two selectable bindings for that call-out:
+
+| `SqlExporter(mode=...)` | How pg_durable invokes a step |
+| --- | --- |
+| `"http"` (default) | `df.http()` → your FastAPI step endpoint (`X-DF-Instance-ID` header + `{input}` body) |
+| `"pgmq"` | `pgmq.send` + `pg_notify` → a `StepWorker` runs the step and writes the result to a poll table pg_durable reads |
+
+```python
+# Pull both bindings off the app (registry + queue config wired for you)
+http_sql = app.exporter(base_url="https://api.example.com/pgflows", mode="http").export_workflow("process_order")
+pgmq_sql = app.exporter(mode="pgmq").export_workflow("process_order")
+
+# The pgmq binding needs a step worker draining the queue + signalling results back:
+await app.run_step_worker()          # blocking; use asyncio.create_task for background
+```
+
+Compose graphs directly with the Python DSL builders — `pgmq_step()` is a native
+`pgmq.send → pg_notify → poll-result → read` unit that composes with the operators:
+
+```python
+from pgflows import pgmq_step
+
+# double_it, then add_ten consuming its output, threaded via a result capture
+node = (
+    pgmq_step("double_it", capture="d")
+    >> pgmq_step("add_ten", input_expr="$d::jsonb", capture="r")
+)
+instance_id = await app.pg_durable.start(node, label="pipeline")
+```
+
+Two gotchas worth knowing (both about using pg_durable correctly):
+
+- **Thread data with captures (`|=>` / `capture=`), not many `df.setvar`s.** With more
+  than one durable var set, pg_durable serializes the vars snapshot with
+  non-deterministic key order and a parallel-join replay then fails. Keep a single
+  config var and pass step data through captures.
+- The pgmq binding polls a result table instead of `df.wait_for_signal`, because a
+  NOTIFY-woken worker can signal before pg_durable registers the waiter (that signal
+  would be dropped). The poll table is race-free.
+
+### Running push mode for real (pg_durable + pgmq)
+
+The bundled compose DB ships only pgmq. To exercise push mode end to end you need a
+Postgres with **both** extensions — build the combined image and run the live e2e
+(real `df.start` / `df.http` / `pgmq.send`, no mocks):
+
+```bash
+docker build -t pgflows-e2e-dfpgmq:latest tests/e2e/docker
+docker compose -f tests/e2e/docker/docker-compose.yml up -d --wait
+uv run pytest tests/e2e/test_live_dfpgmq.py -v
+```
+
+`docker-compose.full.yml` brings up the full two-container stack — that Postgres image
+plus the example app server (`Dockerfile.app` + `examples/server.py`).
 
 ## Scheduling
 

@@ -29,7 +29,7 @@ from pydantic import BaseModel
 
 from pgflows.app import WorkflowApp
 from pgflows.config import PgflowsConfig
-from pgflows.dsl import http, pgmq_step
+from pgflows.dsl import http, if_node, pgmq_step, sql_node
 from pgflows.fastapi_integration import create_pgflows_router
 
 _TEST_DSN = os.getenv(
@@ -103,6 +103,10 @@ async def live_app():
     @app.step()
     async def add_ten(ctx, inp: DblOut) -> AddOut:
         return AddOut(total=inp.val + 10)
+
+    @app.step()
+    async def add_hundred(ctx, inp: DblOut) -> AddOut:
+        return AddOut(total=inp.val + 100)
 
     @app.workflow()
     async def greet_workflow(ctx, inp: NameIn) -> GreetOut:
@@ -230,6 +234,90 @@ async def test_pgmq_exporter_sql_is_valid_df(live_app):
                 instance_id = await conn.fetchval(sql)
         assert instance_id, "exported SQL did not return an instance id"
         assert await _wait_status(client, instance_id) == "completed"
+    finally:
+        live_app._step_worker.shutdown()
+        worker.cancel()
+        try:
+            await worker
+        except (asyncio.CancelledError, Exception):
+            pass
+
+
+# --- complex workflow: sequence + parallel + branch + side-effects ----------
+
+
+@pytest.mark.timeout(90)
+async def test_complex_workflow_parallel_branch_threading(live_app):
+    """A realistic non-linear graph on real df+pgmq, end to end:
+
+        double_it                  (pgmq)  {n:5}    -> {val:10}   capture $d
+          ~> ( add_ten($d)         (pgmq, parallel) -> {total:20}  capture $a
+             & add_hundred($d) )   (pgmq, parallel) -> {total:110} capture $h
+          ~> INSERT audit('ten', $a)        (real side-effect, capture from a branch)
+          ~> INSERT audit('hundred', $h)    (real side-effect, capture from a branch)
+          ~> IF $a.total > 15 THEN audit('high') ELSE audit('low')   (real branch)
+
+    pg_durable is the orchestrator: it runs the two pgmq steps concurrently (the
+    real StepWorker services both), joins them (& waits for ALL), threads the
+    captures made *inside* the parallel branches into the post-join nodes, and
+    durably drives the conditional. We thread data via result captures and keep a
+    single durable var — df serializes the durable-vars snapshot non-deterministically
+    across a JOIN replay when >1 var is set, so prefer captures over many setvars.
+    """
+    import uuid
+
+    run = uuid.uuid4().hex[:12]
+    client = live_app.pg_durable
+
+    async with asyncpg.create_pool(_TEST_DSN, ssl=False) as pool:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "CREATE TABLE IF NOT EXISTS pgflows_audit "
+                "(run text, label text, payload jsonb)"
+            )
+
+    worker = asyncio.create_task(live_app.run_step_worker())
+    try:
+        await client.clearvars()  # keep a single durable var (see docstring)
+        await client.setvar("input", json.dumps({"n": 5}))
+
+        def _audit(label: str, value_sql: str) -> str:
+            return (
+                f"INSERT INTO pgflows_audit(run,label,payload) "
+                f"VALUES ('{run}','{label}',{value_sql})"
+            )
+
+        d = pgmq_step("double_it", result_key="{sys_instance_id}:d", capture="d")
+        a = pgmq_step(
+            "add_ten", input_expr="$d::jsonb", result_key="{sys_instance_id}:a", capture="a"
+        )
+        h = pgmq_step(
+            "add_hundred", input_expr="$d::jsonb", result_key="{sys_instance_id}:h", capture="h"
+        )
+        audit_ten = sql_node(_audit("ten", "$a::jsonb"))
+        audit_hundred = sql_node(_audit("hundred", "$h::jsonb"))
+        branch = if_node(
+            sql_node("SELECT ($a::jsonb->>'total')::int > 15"),
+            sql_node(_audit("branch", "'\"high\"'::jsonb")),
+            sql_node(_audit("branch", "'\"low\"'::jsonb")),
+        )
+
+        graph = d >> (a & h) >> audit_ten >> audit_hundred >> branch
+        instance_id = await client.start(graph, label="complex")
+        assert await _wait_status(client, instance_id, timeout=80) == "completed"
+
+        # Verify the real side-effects the graph wrote.
+        async with asyncpg.create_pool(_TEST_DSN, ssl=False) as pool:
+            async with pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT label, payload FROM pgflows_audit WHERE run = $1 ORDER BY label",
+                    run,
+                )
+        data = {r["label"]: json.loads(r["payload"]) for r in rows}
+        # 5*2=10 ($d); parallel: 10+10=20 ($a) and 10+100=110 ($h); 20>15 → high.
+        assert data["ten"] == {"total": 20}
+        assert data["hundred"] == {"total": 110}
+        assert data["branch"] == "high"
     finally:
         live_app._step_worker.shutdown()
         worker.cancel()
