@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from pyflows.backends.pg_cron import PgCronBackend
-from pyflows.exceptions import BackendNotInitializedError, SchedulerJobNotFoundError
-from pyflows.types import ScheduledJob
+from pgflows.backends.pg_cron import PgCronBackend
+from pgflows.exceptions import BackendNotInitializedError, SchedulerJobNotFoundError
+from pgflows.types import ScheduledJob
 
 _UNSET = object()
 
@@ -33,7 +33,7 @@ async def test_initialize_sets_pool_and_verifies_extension() -> None:
     backend = _make_backend()
     mock_pool = _mock_pool(fetchrow=MagicMock())  # extension present
 
-    with patch("pyflows.backends.pg_cron.asyncpg.create_pool", AsyncMock(return_value=mock_pool)):
+    with patch("pgflows.backends.pg_cron.asyncpg.create_pool", AsyncMock(return_value=mock_pool)):
         await backend.initialize()
 
     assert backend._pool is mock_pool
@@ -43,7 +43,7 @@ async def test_initialize_raises_if_pg_durable_missing() -> None:
     backend = _make_backend()
     mock_pool = _mock_pool(fetchrow=None)  # extension absent
 
-    with patch("pyflows.backends.pg_cron.asyncpg.create_pool", AsyncMock(return_value=mock_pool)):
+    with patch("pgflows.backends.pg_cron.asyncpg.create_pool", AsyncMock(return_value=mock_pool)):
         with pytest.raises(RuntimeError, match="pg_durable"):
             await backend.initialize()
 

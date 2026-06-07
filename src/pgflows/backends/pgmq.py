@@ -6,9 +6,9 @@ from typing import Any  # noqa: F401 — Callable/Coroutine used in listen signa
 
 from tembo_pgmq_python.async_queue import PGMQueue
 
-from pyflows.backends.base import QueueBackend
-from pyflows.exceptions import BackendNotInitializedError
-from pyflows.types import QueueMessage
+from pgflows.backends.base import QueueBackend
+from pgflows.exceptions import BackendNotInitializedError
+from pgflows.types import QueueMessage
 
 
 class PgmqBackend(QueueBackend):

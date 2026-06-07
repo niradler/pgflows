@@ -6,19 +6,19 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from pyflows.context import WorkflowContext
-from pyflows.logger import get_logger
-from pyflows.plugins import PyflowsPlugin, WorkflowEvent, fire
-from pyflows.types import WorkflowState
+from pgflows.context import WorkflowContext
+from pgflows.logger import get_logger
+from pgflows.plugins import PgflowsPlugin, WorkflowEvent, fire
+from pgflows.types import WorkflowState
 
 _log = get_logger("worker")
 
 if TYPE_CHECKING:
-    from pyflows.backends.base import QueueBackend
-    from pyflows.backends.pg_state import PgStateBackend
-    from pyflows.registry import WorkflowRegistry
-    from pyflows.telemetry import PyflowsTelemetry
-    from pyflows.types import QueueMessage
+    from pgflows.backends.base import QueueBackend
+    from pgflows.backends.pg_state import PgStateBackend
+    from pgflows.registry import WorkflowRegistry
+    from pgflows.telemetry import PgflowsTelemetry
+    from pgflows.types import QueueMessage
 
 
 class WorkflowWorker:
@@ -29,10 +29,10 @@ class WorkflowWorker:
         registry: WorkflowRegistry,
         state_backend: PgStateBackend,
         queue_backend: QueueBackend,
-        telemetry: PyflowsTelemetry,
-        queue_name: str = "pyflows_workflows",
+        telemetry: PgflowsTelemetry,
+        queue_name: str = "pgflows_workflows",
         batch_size: int = 5,
-        plugins: list[PyflowsPlugin] | None = None,
+        plugins: list[PgflowsPlugin] | None = None,
     ) -> None:
         self._registry = registry
         self._state = state_backend

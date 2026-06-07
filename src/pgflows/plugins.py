@@ -8,7 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from pyflows.logger import get_logger
+from pgflows.logger import get_logger
 
 logger = get_logger("plugins")
 
@@ -28,8 +28,8 @@ class StepEvent:
     attempt: int = 1
 
 
-class PyflowsPlugin(ABC):
-    """Base class for pyflows plugins. Override any hooks you need."""
+class PgflowsPlugin(ABC):
+    """Base class for pgflows plugins. Override any hooks you need."""
 
     async def before_workflow(self, event: WorkflowEvent) -> None:
         pass
@@ -50,7 +50,7 @@ class PyflowsPlugin(ABC):
         pass
 
 
-class LoggingPlugin(PyflowsPlugin):
+class LoggingPlugin(PgflowsPlugin):
     """Logs workflow and step lifecycle events using Python's logging module."""
 
     def __init__(self, level: int = logging.INFO) -> None:
@@ -89,12 +89,12 @@ class LoggingPlugin(PyflowsPlugin):
         )
 
 
-async def fire(plugins: list[PyflowsPlugin], hook: str, *args: Any, **kwargs: Any) -> None:
+async def fire(plugins: list[PgflowsPlugin], hook: str, *args: Any, **kwargs: Any) -> None:
     """Call a hook on all plugins concurrently, swallowing individual plugin errors."""
     if not plugins:
         return
 
-    async def _call(plugin: PyflowsPlugin) -> None:
+    async def _call(plugin: PgflowsPlugin) -> None:
         try:
             await getattr(plugin, hook)(*args, **kwargs)
         except Exception:

@@ -7,7 +7,7 @@ import textwrap
 from dataclasses import dataclass, field
 from typing import Any
 
-from pyflows.registry import WorkflowRegistry
+from pgflows.registry import WorkflowRegistry
 
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9_]+$")
 
@@ -53,7 +53,7 @@ class SqlExporter:
         steps = self._collect_steps(workflow_name)
         dsl = self._build_dsl(steps, workflow_name)
         return textwrap.dedent(f"""\
-            -- pyflows export: {workflow_name}
+            -- pgflows export: {workflow_name}
             SELECT df.setvar('base_url', '{self._base_url}');
             SELECT df.start(
                 {dsl},
@@ -109,7 +109,7 @@ class SqlExporter:
             )
         dsl = self._build_dsl(step_sqls, workflow_name)
         return textwrap.dedent(f"""\
-            -- pyflows runtime workflow: {workflow_name}
+            -- pgflows runtime workflow: {workflow_name}
             SELECT df.setvar('base_url', '{self._base_url}');
             SELECT df.start(
                 {dsl},
@@ -119,7 +119,7 @@ class SqlExporter:
 
     def export_all(self) -> str:
         """Export all registered workflows to a single SQL file."""
-        parts = [f"-- pyflows bulk export\n-- base_url: {self._base_url}\n"]
+        parts = [f"-- pgflows bulk export\n-- base_url: {self._base_url}\n"]
         for name in self._registry.list_workflows():
             parts.append(self.export_workflow(name))
         return "\n".join(parts)

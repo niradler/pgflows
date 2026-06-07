@@ -1,4 +1,4 @@
-"""AI SRE incident response workflow — pyflows example.
+"""AI SRE incident response workflow — pgflows example.
 
 Demonstrates: multi-step workflows, retry config, typed I/O, plugin hooks.
 
@@ -14,9 +14,9 @@ import logging
 
 from pydantic import BaseModel
 
-from pyflows import (
+from pgflows import (
     LoggingPlugin,
-    PyflowsConfig,
+    PgflowsConfig,
     RetryConfig,
     StepContext,
     WorkflowApp,
@@ -64,8 +64,8 @@ class IncidentReport(BaseModel):
 
 # --- app setup ---
 
-config = PyflowsConfig(
-    dsn="postgresql://pyflows:pyflows@127.0.0.1:5433/pyflows_test",
+config = PgflowsConfig(
+    dsn="postgresql://pgflows:pgflows@127.0.0.1:5433/pgflows_test",
     otel_enabled=False,
     db_ssl=False,
 )

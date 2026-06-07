@@ -5,13 +5,13 @@ from typing import Any
 
 import asyncpg
 
-from pyflows.backends.base import OrchestratorBackend
-from pyflows.exceptions import BackendNotInitializedError, WorkflowNotFoundError
-from pyflows.types import WorkflowState, WorkflowStatus
+from pgflows.backends.base import OrchestratorBackend
+from pgflows.exceptions import BackendNotInitializedError, WorkflowNotFoundError
+from pgflows.types import WorkflowState, WorkflowStatus
 
 
 class PgStateBackend(OrchestratorBackend):
-    """Stores workflow instance and step checkpoint state in pyflows.* Postgres tables.
+    """Stores workflow instance and step checkpoint state in pgflows.* Postgres tables.
 
     Uses asyncpg connection pool. On Linux/macOS the psycopg3 AsyncConnectionPool may
     be substituted; on Windows, psycopg3 async networking is incompatible due to libpq
@@ -51,7 +51,7 @@ class PgStateBackend(OrchestratorBackend):
     async def register_workflow(self, name: str, config: dict[str, Any]) -> None:
         await self._execute(
             """
-            INSERT INTO pyflows.workflow_definitions (name, config)
+            INSERT INTO pgflows.workflow_definitions (name, config)
             VALUES ($1, $2)
             ON CONFLICT (name) DO UPDATE SET config = EXCLUDED.config, updated_at = NOW()
             """,
@@ -61,7 +61,7 @@ class PgStateBackend(OrchestratorBackend):
 
     async def get_workflow_definition(self, name: str) -> dict[str, Any]:
         row = await self._fetchone(
-            "SELECT name, version, config FROM pyflows.workflow_definitions WHERE name = $1",
+            "SELECT name, version, config FROM pgflows.workflow_definitions WHERE name = $1",
             name,
         )
         if row is None:
@@ -71,7 +71,7 @@ class PgStateBackend(OrchestratorBackend):
     async def create_instance(self, workflow_name: str, input_data: dict[str, Any]) -> str:
         row = await self._fetchone(
             """
-            INSERT INTO pyflows.workflow_instances (workflow_name, input)
+            INSERT INTO pgflows.workflow_instances (workflow_name, input)
             VALUES ($1, $2)
             RETURNING instance_id::text
             """,
@@ -84,7 +84,7 @@ class PgStateBackend(OrchestratorBackend):
         row = await self._fetchone(
             """
             SELECT instance_id, workflow_name, state, output, error, created_at, updated_at
-            FROM pyflows.workflow_instances
+            FROM pgflows.workflow_instances
             WHERE instance_id = $1::uuid
             """,
             instance_id,
@@ -106,7 +106,7 @@ class PgStateBackend(OrchestratorBackend):
         self._assert_initialized()
         async with self._pool.acquire() as conn:  # type: ignore[union-attr]
             status = await conn.execute(
-                "UPDATE pyflows.workflow_instances"
+                "UPDATE pgflows.workflow_instances"
                 " SET state='running', updated_at=NOW()"
                 " WHERE instance_id=$1::uuid AND state='pending'",
                 instance_id,
@@ -126,7 +126,7 @@ class PgStateBackend(OrchestratorBackend):
     ) -> None:
         await self._execute(
             """
-            UPDATE pyflows.workflow_instances
+            UPDATE pgflows.workflow_instances
             SET state = $1, output = $2, error = $3, updated_at = NOW()
             WHERE instance_id = $4::uuid
             """,
@@ -144,7 +144,7 @@ class PgStateBackend(OrchestratorBackend):
     ) -> dict[str, Any] | None:
         row = await self._fetchone(
             """
-            SELECT output FROM pyflows.step_results
+            SELECT output FROM pgflows.step_results
             WHERE instance_id = $1::uuid AND step_name = $2 AND step_index = $3
               AND state = 'completed'
             """,
@@ -164,7 +164,7 @@ class PgStateBackend(OrchestratorBackend):
     ) -> None:
         await self._execute(
             """
-            INSERT INTO pyflows.step_results
+            INSERT INTO pgflows.step_results
                 (instance_id, step_name, step_index, state, input, output, completed_at)
             VALUES ($1::uuid, $2, $3, 'completed', $4, $5, NOW())
             ON CONFLICT (instance_id, step_name, step_index)
@@ -188,7 +188,7 @@ class PgStateBackend(OrchestratorBackend):
     ) -> None:
         await self._execute(
             """
-            INSERT INTO pyflows.step_results
+            INSERT INTO pgflows.step_results
                 (instance_id, step_name, step_index, state, input, error, attempt)
             VALUES ($1::uuid, $2, $3, 'failed', $4, $5, $6)
             ON CONFLICT (instance_id, step_name, step_index)
@@ -221,7 +221,7 @@ class PgStateBackend(OrchestratorBackend):
         rows = await self._fetchall(
             f"""
             SELECT instance_id, workflow_name, state, output, error, created_at, updated_at
-            FROM pyflows.workflow_instances
+            FROM pgflows.workflow_instances
             {where}
             ORDER BY created_at DESC
             LIMIT ${len(params)}

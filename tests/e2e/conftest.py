@@ -3,19 +3,19 @@ import os
 import asyncpg
 import pytest
 
-from pyflows.config import PyflowsConfig
+from pgflows.config import PgflowsConfig
 
 TEST_DSN = os.getenv(
-    "PYFLOWS_TEST_DSN",
-    "postgresql://pyflows:pyflows@127.0.0.1:5433/pyflows_test",
+    "PGFLOWS_TEST_DSN",
+    "postgresql://pgflows:pgflows@127.0.0.1:5433/pgflows_test",
 )
 
 
 @pytest.fixture(scope="session")
-def pyflows_config():
-    return PyflowsConfig(
+def pgflows_config():
+    return PgflowsConfig(
         dsn=TEST_DSN,
-        workflow_queue="pyflows_e2e_q",
+        workflow_queue="pgflows_e2e_q",
         otel_enabled=False,
         db_ssl=False,
     )

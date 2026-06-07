@@ -1,27 +1,27 @@
-"""pyflows — durable workflow engine SDK for Python + Postgres."""
+"""pgflows — durable workflow engine SDK for Python + Postgres."""
 
-from pyflows.app import WorkflowApp
-from pyflows.backends import OrchestratorBackend, QueueBackend, SchedulerBackend
-from pyflows.backends.pg_cron import PgCronBackend
-from pyflows.backends.pg_durable import PgDurableBackend
-from pyflows.backends.pg_state import PgStateBackend
-from pyflows.backends.pgmq import PgmqBackend
-from pyflows.config import PyflowsConfig
-from pyflows.context import StepContext, WorkflowContext
-from pyflows.exceptions import (
+from pgflows.app import WorkflowApp
+from pgflows.backends import OrchestratorBackend, QueueBackend, SchedulerBackend
+from pgflows.backends.pg_cron import PgCronBackend
+from pgflows.backends.pg_durable import PgDurableBackend
+from pgflows.backends.pg_state import PgStateBackend
+from pgflows.backends.pgmq import PgmqBackend
+from pgflows.config import PgflowsConfig
+from pgflows.context import StepContext, WorkflowContext
+from pgflows.exceptions import (
     BackendNotInitializedError,
-    PyflowsError,
+    PgflowsError,
     SchedulerJobNotFoundError,
     StepExecutionError,
     WorkflowAlreadyExistsError,
     WorkflowNotFoundError,
 )
-from pyflows.logger import configure_default_logging, get_logger
-from pyflows.plugins import LoggingPlugin, PyflowsPlugin, StepEvent, WorkflowEvent
-from pyflows.registry import WorkflowRegistry
-from pyflows.sql_exporter import DryRunResult, SqlExporter, StepSql
-from pyflows.telemetry import PyflowsTelemetry
-from pyflows.types import (
+from pgflows.logger import configure_default_logging, get_logger
+from pgflows.plugins import LoggingPlugin, PgflowsPlugin, StepEvent, WorkflowEvent
+from pgflows.registry import WorkflowRegistry
+from pgflows.sql_exporter import DryRunResult, SqlExporter, StepSql
+from pgflows.telemetry import PgflowsTelemetry
+from pgflows.types import (
     QueueMessage,
     RetryConfig,
     ScheduledJob,
@@ -29,7 +29,7 @@ from pyflows.types import (
     WorkflowState,
     WorkflowStatus,
 )
-from pyflows.worker import WorkflowWorker
+from pgflows.worker import WorkflowWorker
 
 __all__ = [
     # Main entry point
@@ -40,8 +40,8 @@ __all__ = [
     # Registry
     "WorkflowRegistry",
     # Config + telemetry
-    "PyflowsConfig",
-    "PyflowsTelemetry",
+    "PgflowsConfig",
+    "PgflowsTelemetry",
     # Worker
     "WorkflowWorker",
     # SQL exporter
@@ -49,7 +49,7 @@ __all__ = [
     "DryRunResult",
     "StepSql",
     # Plugin system
-    "PyflowsPlugin",
+    "PgflowsPlugin",
     "LoggingPlugin",
     "WorkflowEvent",
     "StepEvent",
@@ -73,7 +73,7 @@ __all__ = [
     "RetryConfig",
     "StepConfig",
     # Exceptions
-    "PyflowsError",
+    "PgflowsError",
     "WorkflowNotFoundError",
     "WorkflowAlreadyExistsError",
     "StepExecutionError",

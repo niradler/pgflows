@@ -1,8 +1,8 @@
 import pytest
 from pydantic import BaseModel
 
-from pyflows.registry import WorkflowRegistry
-from pyflows.sql_exporter import DryRunResult, SqlExporter
+from pgflows.registry import WorkflowRegistry
+from pgflows.sql_exporter import DryRunResult, SqlExporter
 
 
 class CheckInput(BaseModel):

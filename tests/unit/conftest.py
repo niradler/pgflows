@@ -7,8 +7,8 @@ import asyncpg
 import pytest
 
 _TEST_DSN = os.getenv(
-    "PYFLOWS_TEST_DSN",
-    "postgresql://pyflows:pyflows@127.0.0.1:5433/pyflows_test",
+    "PGFLOWS_TEST_DSN",
+    "postgresql://pgflows:pgflows@127.0.0.1:5433/pgflows_test",
 )
 
 

@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from pyflows.migrations import MIGRATIONS, run_migrations
+from pgflows.migrations import MIGRATIONS, run_migrations
 
 
 @pytest.mark.asyncio
@@ -18,7 +18,7 @@ async def test_run_migrations_applies_all_when_fresh() -> None:
         __aexit__=AsyncMock(return_value=False),
     ))
 
-    with patch("pyflows.migrations.asyncpg.connect", AsyncMock(return_value=mock_conn)):
+    with patch("pgflows.migrations.asyncpg.connect", AsyncMock(return_value=mock_conn)):
         count = await run_migrations("postgresql://localhost/test")
 
     assert count == len(MIGRATIONS)
@@ -36,7 +36,7 @@ async def test_run_migrations_skips_applied() -> None:
         __aexit__=AsyncMock(return_value=False),
     ))
 
-    with patch("pyflows.migrations.asyncpg.connect", AsyncMock(return_value=mock_conn)):
+    with patch("pgflows.migrations.asyncpg.connect", AsyncMock(return_value=mock_conn)):
         count = await run_migrations("postgresql://localhost/test")
 
     # All already applied → 0 new
@@ -50,7 +50,7 @@ async def test_run_migrations_closes_connection_on_error() -> None:
     mock_conn.fetch = AsyncMock(side_effect=RuntimeError("db error"))
     mock_conn.close = AsyncMock()
 
-    with patch("pyflows.migrations.asyncpg.connect", AsyncMock(return_value=mock_conn)):
+    with patch("pgflows.migrations.asyncpg.connect", AsyncMock(return_value=mock_conn)):
         with pytest.raises(RuntimeError, match="db error"):
             await run_migrations("postgresql://localhost/test")
 
@@ -65,7 +65,7 @@ async def test_run_migrations_idempotent_when_all_applied() -> None:
     mock_conn.fetch = AsyncMock(return_value=all_versions)
     mock_conn.execute = AsyncMock()
 
-    with patch("pyflows.migrations.asyncpg.connect", AsyncMock(return_value=mock_conn)):
+    with patch("pgflows.migrations.asyncpg.connect", AsyncMock(return_value=mock_conn)):
         count = await run_migrations("postgresql://localhost/test")
 
     assert count == 0

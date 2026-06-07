@@ -1,8 +1,8 @@
 import pytest
 from pydantic import BaseModel
 
-from pyflows.app import WorkflowApp
-from pyflows.types import WorkflowState
+from pgflows.app import WorkflowApp
+from pgflows.types import WorkflowState
 
 
 class GreetInput(BaseModel):
@@ -14,8 +14,8 @@ class GreetOutput(BaseModel):
 
 
 @pytest.mark.asyncio
-async def test_workflow_completes(pyflows_config):
-    app = WorkflowApp(config=pyflows_config)
+async def test_workflow_completes(pgflows_config):
+    app = WorkflowApp(config=pgflows_config)
 
     @app.workflow()
     async def greet_workflow(ctx, input: GreetInput) -> GreetOutput:
@@ -35,8 +35,8 @@ async def test_workflow_completes(pyflows_config):
 
 
 @pytest.mark.asyncio
-async def test_workflow_with_step(pyflows_config):
-    app = WorkflowApp(config=pyflows_config)
+async def test_workflow_with_step(pgflows_config):
+    app = WorkflowApp(config=pgflows_config)
 
     @app.step()
     async def double_value(ctx, input: GreetInput) -> GreetOutput:
@@ -58,8 +58,8 @@ async def test_workflow_with_step(pyflows_config):
 
 
 @pytest.mark.asyncio
-async def test_list_workflows(pyflows_config):
-    app = WorkflowApp(config=pyflows_config)
+async def test_list_workflows(pgflows_config):
+    app = WorkflowApp(config=pgflows_config)
 
     @app.workflow()
     async def list_test_wf(ctx, input: GreetInput) -> GreetOutput:

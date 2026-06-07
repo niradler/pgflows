@@ -2,8 +2,8 @@
 import pytest
 from pydantic import BaseModel
 
-from pyflows.app import WorkflowApp
-from pyflows.config import PyflowsConfig
+from pgflows.app import WorkflowApp
+from pgflows.config import PgflowsConfig
 
 
 class GreetInput(BaseModel):
@@ -15,7 +15,7 @@ class GreetOutput(BaseModel):
 
 
 def _make_app() -> WorkflowApp:
-    return WorkflowApp(config=PyflowsConfig(dsn="postgresql://x:x@localhost/x"))
+    return WorkflowApp(config=PgflowsConfig(dsn="postgresql://x:x@localhost/x"))
 
 
 def test_app_registers_workflow():

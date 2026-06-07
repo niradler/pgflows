@@ -3,12 +3,12 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import BaseModel
 
-from pyflows.context import StepContext, WorkflowContext
-from pyflows.exceptions import StepExecutionError
-from pyflows.plugins import PyflowsPlugin, StepEvent
-from pyflows.registry import WorkflowRegistry
-from pyflows.telemetry import PyflowsTelemetry
-from pyflows.types import RetryConfig
+from pgflows.context import StepContext, WorkflowContext
+from pgflows.exceptions import StepExecutionError
+from pgflows.plugins import PgflowsPlugin, StepEvent
+from pgflows.registry import WorkflowRegistry
+from pgflows.telemetry import PgflowsTelemetry
+from pgflows.types import RetryConfig
 
 
 class NumberInput(BaseModel):
@@ -27,7 +27,7 @@ async def always_fails(ctx: StepContext, input: NumberInput) -> NumberOutput:
     raise ValueError("deliberate failure")
 
 
-class TrackerPlugin(PyflowsPlugin):
+class TrackerPlugin(PgflowsPlugin):
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, int]] = []
 
@@ -54,7 +54,7 @@ def make_ctx(state, step_defaults=None, plugins=None, registry=None):
         instance_id="inst-001",
         workflow_name="test_wf",
         state_backend=state,
-        telemetry=PyflowsTelemetry.noop(),
+        telemetry=PgflowsTelemetry.noop(),
         step_defaults=step_defaults,
         plugins=plugins,
         registry=registry,

@@ -8,15 +8,15 @@ from typing import TYPE_CHECKING, Any, TypeVar, get_type_hints
 
 from pydantic import BaseModel
 
-from pyflows.exceptions import StepExecutionError
-from pyflows.logger import get_logger
-from pyflows.plugins import PyflowsPlugin, StepEvent, fire
-from pyflows.telemetry import PyflowsTelemetry
-from pyflows.types import RetryConfig
+from pgflows.exceptions import StepExecutionError
+from pgflows.logger import get_logger
+from pgflows.plugins import PgflowsPlugin, StepEvent, fire
+from pgflows.telemetry import PgflowsTelemetry
+from pgflows.types import RetryConfig
 
 if TYPE_CHECKING:
-    from pyflows.backends.pg_state import PgStateBackend
-    from pyflows.registry import WorkflowRegistry
+    from pgflows.backends.pg_state import PgStateBackend
+    from pgflows.registry import WorkflowRegistry
 
 _log = get_logger("context")
 T = TypeVar("T", bound=BaseModel)
@@ -34,9 +34,9 @@ class WorkflowContext:
         instance_id: str,
         workflow_name: str,
         state_backend: PgStateBackend,
-        telemetry: PyflowsTelemetry,
+        telemetry: PgflowsTelemetry,
         step_defaults: RetryConfig | None = None,
-        plugins: list[PyflowsPlugin] | None = None,
+        plugins: list[PgflowsPlugin] | None = None,
         registry: WorkflowRegistry | None = None,
     ) -> None:
         self.instance_id = instance_id

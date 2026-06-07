@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
-from pyflows.types import QueueMessage, ScheduledJob, WorkflowStatus
+from pgflows.types import QueueMessage, ScheduledJob, WorkflowStatus
 
 
 class OrchestratorBackend(ABC):

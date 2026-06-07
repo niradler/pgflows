@@ -1,8 +1,8 @@
 import pytest
 from pydantic import BaseModel
 
-from pyflows.app import WorkflowApp
-from pyflows.types import RetryConfig, WorkflowState
+from pgflows.app import WorkflowApp
+from pgflows.types import RetryConfig, WorkflowState
 
 
 class NumInput(BaseModel):
@@ -14,9 +14,9 @@ class NumOutput(BaseModel):
 
 
 @pytest.mark.asyncio
-async def test_step_retries_on_failure(pyflows_config):
+async def test_step_retries_on_failure(pgflows_config):
     counter = {"n": 0}
-    app = WorkflowApp(config=pyflows_config)
+    app = WorkflowApp(config=pgflows_config)
 
     @app.step(retry=RetryConfig(max_retries=2, initial_delay_seconds=0.01))
     async def flaky_step(ctx, input: NumInput) -> NumOutput:
@@ -42,8 +42,8 @@ async def test_step_retries_on_failure(pyflows_config):
 
 
 @pytest.mark.asyncio
-async def test_step_fails_after_max_retries(pyflows_config):
-    app = WorkflowApp(config=pyflows_config)
+async def test_step_fails_after_max_retries(pgflows_config):
+    app = WorkflowApp(config=pgflows_config)
 
     @app.step(retry=RetryConfig(max_retries=1, initial_delay_seconds=0.01))
     async def always_fails(ctx, input: NumInput) -> NumOutput:

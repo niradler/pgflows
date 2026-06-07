@@ -5,25 +5,25 @@ from collections.abc import Callable
 
 from pydantic import BaseModel
 
-from pyflows.backends.pg_state import PgStateBackend
-from pyflows.backends.pgmq import PgmqBackend
-from pyflows.config import PyflowsConfig
-from pyflows.migrations import run_migrations
-from pyflows.plugins import PyflowsPlugin
-from pyflows.registry import WorkflowRegistry
-from pyflows.telemetry import PyflowsTelemetry
-from pyflows.types import RetryConfig, WorkflowState, WorkflowStatus
-from pyflows.worker import WorkflowWorker
+from pgflows.backends.pg_state import PgStateBackend
+from pgflows.backends.pgmq import PgmqBackend
+from pgflows.config import PgflowsConfig
+from pgflows.migrations import run_migrations
+from pgflows.plugins import PgflowsPlugin
+from pgflows.registry import WorkflowRegistry
+from pgflows.telemetry import PgflowsTelemetry
+from pgflows.types import RetryConfig, WorkflowState, WorkflowStatus
+from pgflows.worker import WorkflowWorker
 
 
 class WorkflowApp:
-    """Main entry point for the pyflows SDK."""
+    """Main entry point for the pgflows SDK."""
 
-    def __init__(self, config: PyflowsConfig) -> None:
+    def __init__(self, config: PgflowsConfig) -> None:
         self.config = config
         self.registry = WorkflowRegistry()
-        self._plugins: list[PyflowsPlugin] = []
-        self._telemetry: PyflowsTelemetry | None = None
+        self._plugins: list[PgflowsPlugin] = []
+        self._telemetry: PgflowsTelemetry | None = None
         self._state: PgStateBackend | None = None
         self._queue: PgmqBackend | None = None
         self._worker: WorkflowWorker | None = None
@@ -52,9 +52,9 @@ class WorkflowApp:
         await self._queue._ensure_queue(self.config.workflow_queue)
 
         self._telemetry = (
-            PyflowsTelemetry.from_env(self.config.otel_service_name)
+            PgflowsTelemetry.from_env(self.config.otel_service_name)
             if self.config.otel_enabled
-            else PyflowsTelemetry.noop()
+            else PgflowsTelemetry.noop()
         )
 
         self._pg_durable_available = await self._state.check_extension("df")
@@ -78,7 +78,7 @@ class WorkflowApp:
         """Enqueue a workflow run. Returns instance_id."""
         self._assert_initialized()
         defn = self.registry.get_workflow(
-            getattr(workflow_fn, "_pyflows_name", workflow_fn.__name__)
+            getattr(workflow_fn, "_pgflows_name", workflow_fn.__name__)
         )
         input_dict = input_model.model_dump()
         instance_id = await self._state.create_instance(defn.name, input_dict)  # type: ignore[union-attr]
@@ -135,7 +135,7 @@ class WorkflowApp:
 
         return decorator
 
-    def register_plugin(self, plugin: PyflowsPlugin) -> None:
+    def register_plugin(self, plugin: PgflowsPlugin) -> None:
         """Register a plugin to receive workflow and step lifecycle hooks."""
         self._plugins.append(plugin)
 

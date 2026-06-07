@@ -526,7 +526,7 @@ wheels = [
 ]
 
 [[package]]
-name = "pyflows"
+name = "pgflows"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

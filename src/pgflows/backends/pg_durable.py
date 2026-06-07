@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from pyflows.backends.base import OrchestratorBackend
-from pyflows.exceptions import BackendNotInitializedError
-from pyflows.types import WorkflowStatus
+from pgflows.backends.base import OrchestratorBackend
+from pgflows.exceptions import BackendNotInitializedError
+from pgflows.types import WorkflowStatus
 
 
 class PgDurableBackend(OrchestratorBackend):

@@ -1,8 +1,8 @@
 import pytest
 from pydantic import BaseModel
 
-from pyflows.registry import StepDefinition, WorkflowDefinition, WorkflowRegistry
-from pyflows.types import RetryConfig
+from pgflows.registry import StepDefinition, WorkflowDefinition, WorkflowRegistry
+from pgflows.types import RetryConfig
 
 
 class MyInput(BaseModel):

@@ -1,4 +1,4 @@
-# pyflows — Repository Guidelines
+# pgflows — Repository Guidelines
 
 ## Core principles
 
@@ -67,7 +67,7 @@ Cross-module imports must flow downward (app → worker → context → backends
 - Unit tests: mock backends with `AsyncMock` — no DB required, must run offline.
 - E2E tests: real Postgres via `docker compose up -d`. Skip automatically when DB is down.
 - Every public method has at least one unit test.
-- Test file mirrors source: `src/pyflows/foo.py` → `tests/unit/test_foo.py`.
+- Test file mirrors source: `src/pgflows/foo.py` → `tests/unit/test_foo.py`.
 
 ## Commands
 

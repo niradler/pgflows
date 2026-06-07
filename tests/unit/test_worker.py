@@ -4,10 +4,10 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import BaseModel
 
-from pyflows.registry import WorkflowRegistry
-from pyflows.telemetry import PyflowsTelemetry
-from pyflows.types import QueueMessage, WorkflowState
-from pyflows.worker import WorkflowWorker
+from pgflows.registry import WorkflowRegistry
+from pgflows.telemetry import PgflowsTelemetry
+from pgflows.types import QueueMessage, WorkflowState
+from pgflows.worker import WorkflowWorker
 
 
 class WInput(BaseModel):
@@ -25,7 +25,7 @@ async def simple_workflow(ctx, input: WInput) -> WOutput:
 def _make_queue_msg(payload: dict) -> QueueMessage:
     return QueueMessage(
         message_id="1",
-        queue="pyflows_workflows",
+        queue="pgflows_workflows",
         payload=payload,
         enqueued_at=datetime.now(UTC),
     )
@@ -50,8 +50,8 @@ async def test_worker_processes_task():
         registry=registry,
         state_backend=state,
         queue_backend=queue,
-        telemetry=PyflowsTelemetry.noop(),
-        queue_name="pyflows_workflows",
+        telemetry=PgflowsTelemetry.noop(),
+        queue_name="pgflows_workflows",
     )
     await worker.process_batch()
 
@@ -83,8 +83,8 @@ async def test_worker_marks_failed_on_exception():
         registry=registry,
         state_backend=state,
         queue_backend=queue,
-        telemetry=PyflowsTelemetry.noop(),
-        queue_name="pyflows_workflows",
+        telemetry=PgflowsTelemetry.noop(),
+        queue_name="pgflows_workflows",
     )
     await worker.process_batch()
 
@@ -112,12 +112,12 @@ async def test_worker_skips_non_pending_instance():
         registry=registry,
         state_backend=state,
         queue_backend=queue,
-        telemetry=PyflowsTelemetry.noop(),
-        queue_name="pyflows_workflows",
+        telemetry=PgflowsTelemetry.noop(),
+        queue_name="pgflows_workflows",
     )
     await worker.process_batch()
 
-    queue.ack.assert_called_once_with("pyflows_workflows", "1")
+    queue.ack.assert_called_once_with("pgflows_workflows", "1")
     state.update_instance_state.assert_not_called()
 
 
@@ -136,8 +136,8 @@ async def test_worker_skips_unknown_workflow():
         registry=registry,
         state_backend=state,
         queue_backend=queue,
-        telemetry=PyflowsTelemetry.noop(),
-        queue_name="pyflows_workflows",
+        telemetry=PgflowsTelemetry.noop(),
+        queue_name="pgflows_workflows",
     )
     await worker.process_batch()
     queue.ack.assert_called_once()

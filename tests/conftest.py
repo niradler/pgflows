@@ -5,12 +5,12 @@ import asyncpg
 import pytest
 
 TEST_DSN = os.getenv(
-    "PYFLOWS_TEST_DSN",
-    "postgresql://pyflows:pyflows@127.0.0.1:5433/pyflows_test",
+    "PGFLOWS_TEST_DSN",
+    "postgresql://pgflows:pgflows@127.0.0.1:5433/pgflows_test",
 )
 
 SCHEMA_SQL = (
-    pathlib.Path(__file__).parent.parent / "src" / "pyflows" / "schema.sql"
+    pathlib.Path(__file__).parent.parent / "src" / "pgflows" / "schema.sql"
 ).read_text()
 
 

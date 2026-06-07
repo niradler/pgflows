@@ -1,4 +1,4 @@
-# pyflows
+# pgflows
 
 [![PyPI](https://img.shields.io/pypi/v/pgflows)](https://pypi.org/project/pgflows/)
 [![Python](https://img.shields.io/pypi/pyversions/pgflows)](https://pypi.org/project/pgflows/)
@@ -6,7 +6,7 @@
 
 > Durable workflow engine SDK for Python + Postgres
 
-pyflows lets you write long-running, fault-tolerant workflows as plain async Python functions — backed entirely by your existing Postgres database. No extra infrastructure, no separate orchestration service, no new runtime to operate.
+pgflows lets you write long-running, fault-tolerant workflows as plain async Python functions — backed entirely by your existing Postgres database. No extra infrastructure, no separate orchestration service, no new runtime to operate.
 
 > [!WARNING]
 > **Early development (alpha).** The core API is stabilizing but not yet 1.0. Expect breaking changes before the first stable release.
@@ -33,10 +33,10 @@ uv add pgflows
 ```python
 import asyncio
 from pydantic import BaseModel
-from pyflows import PyflowsConfig, RetryConfig, StepContext, WorkflowApp, WorkflowContext
+from pgflows import PgflowsConfig, RetryConfig, StepContext, WorkflowApp, WorkflowContext
 
-config = PyflowsConfig(
-    dsn="postgresql://pyflows:pyflows@127.0.0.1:5433/pyflows_test",
+config = PgflowsConfig(
+    dsn="postgresql://pgflows:pgflows@127.0.0.1:5433/pgflows_test",
     otel_enabled=False,
     db_ssl=False,
 )
@@ -91,13 +91,13 @@ asyncio.run(main())
 ## Plugin system
 
 ```python
-from pyflows import LoggingPlugin, PyflowsPlugin, StepEvent, WorkflowEvent
+from pgflows import LoggingPlugin, PgflowsPlugin, StepEvent, WorkflowEvent
 
 # Built-in: log all lifecycle events
 app.register_plugin(LoggingPlugin())
 
 # Custom: implement any subset of hooks
-class MetricsPlugin(PyflowsPlugin):
+class MetricsPlugin(PgflowsPlugin):
     async def after_step(self, event: StepEvent, result: object) -> None:
         metrics.record("step.completed", tags={"step": event.step_name})
 
@@ -112,7 +112,7 @@ Plugins are called in registration order. A plugin that raises never affects oth
 ## Retry configuration
 
 ```python
-from pyflows import RetryConfig
+from pgflows import RetryConfig
 
 # Per-step retry (backoff can be "exponential" or "linear")
 @app.step(retry=RetryConfig(max_retries=5, initial_delay_seconds=2.0, max_delay_seconds=60.0, backoff="exponential"))
@@ -125,7 +125,7 @@ async def my_workflow(ctx, input: MyInput) -> MyOutput: ...
 
 ## SQL export and runtime workflows
 
-pyflows can export any registered workflow to a [pg_durable](https://github.com/microsoft/pg_durable) SQL DSL. Use this to:
+pgflows can export any registered workflow to a [pg_durable](https://github.com/microsoft/pg_durable) SQL DSL. Use this to:
 
 - Transfer workflow definitions from dev → prod without code deployment
 - Create workflows at runtime from config, API payloads, or external systems
@@ -134,7 +134,7 @@ pyflows can export any registered workflow to a [pg_durable](https://github.com/
 ### Export a Python workflow to SQL
 
 ```python
-from pyflows import SqlExporter
+from pgflows import SqlExporter
 
 exporter = SqlExporter(registry=app.registry, base_url="http://my-app:8000")
 
@@ -175,7 +175,7 @@ sql = exporter.export_all()
 `PgCronBackend` schedules recurring workflows using pg_durable's `df.wait_for_schedule()` — no `pg_cron` extension required, only the `df` extension from [pg_durable](https://github.com/microsoft/pg_durable).
 
 ```python
-from pyflows import PgCronBackend
+from pgflows import PgCronBackend
 
 scheduler = PgCronBackend(dsn=config.dsn)
 await scheduler.initialize()
@@ -184,7 +184,7 @@ await scheduler.initialize()
 job_id = await scheduler.schedule(
     job_name="hourly_health_check",
     cron="0 * * * *",
-    command="SELECT pyflows.enqueue_workflow('health_check', '{}')",
+    command="SELECT pgflows.enqueue_workflow('health_check', '{}')",
 )
 
 jobs = await scheduler.list_jobs()
@@ -264,7 +264,7 @@ See [`examples/ai_sre/workflow.py`](examples/ai_sre/workflow.py) for a full inci
 - [x] M2 — Core SDK: `WorkflowApp`, `@step`, `@workflow`, `WorkflowContext`, replay engine
 - [x] M3 — SqlExporter: Python workflow → pg_durable DSL (AST-based)
 - [x] M4 — E2E test suite: basic, retry, monitor/cancel (Docker-based)
-- [x] M6 — Plugin system: `PyflowsPlugin` ABC, `LoggingPlugin`, lifecycle hooks
+- [x] M6 — Plugin system: `PgflowsPlugin` ABC, `LoggingPlugin`, lifecycle hooks
 - [x] M7 — Migrations + scheduler: versioned schema migrations, `PgCronBackend` via pg_durable
 - [x] M8 — AI SRE example, README, production hardening: DLQ, worker coordination, linear backoff, pg_durable detection
 - [ ] M5 — FastAPI integration: push endpoint (deferred; pull mode works without it)

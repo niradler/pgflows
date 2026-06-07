@@ -1,8 +1,8 @@
 import pytest
 from pydantic import BaseModel
 
-from pyflows.app import WorkflowApp
-from pyflows.types import WorkflowState
+from pgflows.app import WorkflowApp
+from pgflows.types import WorkflowState
 
 
 class SimpleInput(BaseModel):
@@ -14,8 +14,8 @@ class SimpleOutput(BaseModel):
 
 
 @pytest.mark.asyncio
-async def test_monitor_pending_then_completed(pyflows_config):
-    app = WorkflowApp(config=pyflows_config)
+async def test_monitor_pending_then_completed(pgflows_config):
+    app = WorkflowApp(config=pgflows_config)
 
     @app.workflow()
     async def monitor_wf(ctx, input: SimpleInput) -> SimpleOutput:
@@ -37,8 +37,8 @@ async def test_monitor_pending_then_completed(pyflows_config):
 
 
 @pytest.mark.asyncio
-async def test_cancel_workflow(pyflows_config):
-    app = WorkflowApp(config=pyflows_config)
+async def test_cancel_workflow(pgflows_config):
+    app = WorkflowApp(config=pgflows_config)
 
     @app.workflow()
     async def cancel_wf(ctx, input: SimpleInput) -> SimpleOutput:

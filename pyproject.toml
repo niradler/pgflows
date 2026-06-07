@@ -28,16 +28,13 @@ dependencies = [
 fastapi = ["fastapi", "uvicorn[standard]"]
 
 [project.urls]
-Homepage = "https://github.com/niradler/pyflows"
-Repository = "https://github.com/niradler/pyflows"
-Issues = "https://github.com/niradler/pyflows/issues"
+Homepage = "https://github.com/niradler/pgflows"
+Repository = "https://github.com/niradler/pgflows"
+Issues = "https://github.com/niradler/pgflows/issues"
 
 [build-system]
 requires = ["uv_build>=0.10.0,<0.11.0"]
 build-backend = "uv_build"
-
-[tool.uv.build-backend]
-module-name = "pyflows"
 
 [dependency-groups]
 dev = [

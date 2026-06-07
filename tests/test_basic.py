@@ -1,5 +1,5 @@
-import pyflows
+import pgflows
 
 
 def test_import():
-    assert pyflows is not None
+    assert pgflows is not None

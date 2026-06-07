@@ -7,12 +7,12 @@ import pytest
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from pydantic import BaseModel
 
-from pyflows.app import WorkflowApp
-from pyflows.context import StepContext
-from pyflows.plugins import PyflowsPlugin, StepEvent, WorkflowEvent
-from pyflows.sql_exporter import SqlExporter
-from pyflows.telemetry import PyflowsTelemetry
-from pyflows.types import RetryConfig, WorkflowState
+from pgflows.app import WorkflowApp
+from pgflows.context import StepContext
+from pgflows.plugins import PgflowsPlugin, StepEvent, WorkflowEvent
+from pgflows.sql_exporter import SqlExporter
+from pgflows.telemetry import PgflowsTelemetry
+from pgflows.types import RetryConfig, WorkflowState
 
 # ---------------------------------------------------------------------------
 # Test 1 — multi-step data pipeline
@@ -32,8 +32,8 @@ class MessageOutput(BaseModel):
 
 
 @pytest.mark.asyncio
-async def test_multi_step_data_pipeline(pyflows_config):
-    app = WorkflowApp(config=pyflows_config)
+async def test_multi_step_data_pipeline(pgflows_config):
+    app = WorkflowApp(config=pgflows_config)
 
     @app.step()
     async def parse_step(ctx: StepContext, input: RawInput) -> IntValue:
@@ -78,10 +78,10 @@ class CountOutput(BaseModel):
 
 
 @pytest.mark.asyncio
-async def test_checkpoint_replay_skips_executed_steps(pyflows_config):
+async def test_checkpoint_replay_skips_executed_steps(pgflows_config):
     step1_calls = {"n": 0}
     step2_calls = {"n": 0}
-    app = WorkflowApp(config=pyflows_config)
+    app = WorkflowApp(config=pgflows_config)
 
     @app.step()
     async def replay_step_one(ctx: StepContext, input: CountInput) -> CountOutput:
@@ -134,7 +134,7 @@ async def test_checkpoint_replay_skips_executed_steps(pyflows_config):
 # ---------------------------------------------------------------------------
 
 
-class CapturePlugin(PyflowsPlugin):
+class CapturePlugin(PgflowsPlugin):
     def __init__(self) -> None:
         self.events: list[str] = []
 
@@ -160,9 +160,9 @@ class HookOutput(BaseModel):
 
 
 @pytest.mark.asyncio
-async def test_plugin_hooks_fire_in_order(pyflows_config):
+async def test_plugin_hooks_fire_in_order(pgflows_config):
     capture = CapturePlugin()
-    app = WorkflowApp(config=pyflows_config)
+    app = WorkflowApp(config=pgflows_config)
     app.register_plugin(capture)
 
     @app.step()
@@ -211,8 +211,8 @@ class ConcOutput(BaseModel):
 
 
 @pytest.mark.asyncio
-async def test_concurrent_workflows_all_complete(pyflows_config):
-    app = WorkflowApp(config=pyflows_config)
+async def test_concurrent_workflows_all_complete(pgflows_config):
+    app = WorkflowApp(config=pgflows_config)
 
     @app.step()
     async def conc_double(ctx: StepContext, input: ConcInput) -> ConcOutput:
@@ -255,9 +255,9 @@ class MultiOutput(BaseModel):
 
 
 @pytest.mark.asyncio
-async def test_same_step_called_multiple_times(pyflows_config):
+async def test_same_step_called_multiple_times(pgflows_config):
     call_log: list[int] = []
-    app = WorkflowApp(config=pyflows_config)
+    app = WorkflowApp(config=pgflows_config)
 
     @app.step()
     async def increment_step(ctx: StepContext, input: MultiInput) -> MultiOutput:
@@ -309,8 +309,8 @@ class ExportOutput(BaseModel):
 
 
 @pytest.mark.asyncio
-async def test_sql_exporter_dry_run_real_workflow(pyflows_config):
-    app = WorkflowApp(config=pyflows_config)
+async def test_sql_exporter_dry_run_real_workflow(pgflows_config):
+    app = WorkflowApp(config=pgflows_config)
 
     @app.step()
     async def export_step_alpha(ctx: StepContext, input: ExportInput) -> ExportOutput:
@@ -359,8 +359,8 @@ class FailOutput(BaseModel):
 
 
 @pytest.mark.asyncio
-async def test_failed_step_records_error_in_db(pyflows_config):
-    app = WorkflowApp(config=pyflows_config)
+async def test_failed_step_records_error_in_db(pgflows_config):
+    app = WorkflowApp(config=pgflows_config)
 
     @app.step(retry=RetryConfig(max_retries=0, initial_delay_seconds=0.0))
     async def always_explodes(ctx: StepContext, input: FailInput) -> FailOutput:
@@ -379,11 +379,11 @@ async def test_failed_step_records_error_in_db(pyflows_config):
         assert status.state == WorkflowState.FAILED
 
         # Query step_results directly — get_step_result only returns 'completed' rows.
-        conn = await asyncpg.connect(pyflows_config.dsn, ssl=False)
+        conn = await asyncpg.connect(pgflows_config.dsn, ssl=False)
         try:
             row = await conn.fetchrow(
                 """
-                SELECT state, error FROM pyflows.step_results
+                SELECT state, error FROM pgflows.step_results
                 WHERE instance_id = $1::uuid AND step_name = $2 AND step_index = 0
                 """,
                 instance_id,
@@ -414,8 +414,8 @@ class TransOutput(BaseModel):
 
 
 @pytest.mark.asyncio
-async def test_workflow_state_transitions(pyflows_config):
-    app = WorkflowApp(config=pyflows_config)
+async def test_workflow_state_transitions(pgflows_config):
+    app = WorkflowApp(config=pgflows_config)
 
     @app.workflow()
     async def transition_workflow(ctx, input: TransInput) -> TransOutput:
@@ -451,9 +451,9 @@ class SpanOutput(BaseModel):
 
 
 @pytest.mark.asyncio
-async def test_otel_spans_generated(pyflows_config):
+async def test_otel_spans_generated(pgflows_config):
     exporter = InMemorySpanExporter()
-    app = WorkflowApp(config=pyflows_config)
+    app = WorkflowApp(config=pgflows_config)
 
     @app.step()
     async def span_step(ctx: StepContext, input: SpanInput) -> SpanOutput:
@@ -466,7 +466,7 @@ async def test_otel_spans_generated(pyflows_config):
     await app.initialize()
     try:
         # Replace no-op telemetry with one backed by the in-memory exporter.
-        real_tel = PyflowsTelemetry.with_in_memory_exporter(exporter)
+        real_tel = PgflowsTelemetry.with_in_memory_exporter(exporter)
         app._telemetry = real_tel
         app._worker._telemetry = real_tel
 
@@ -480,18 +480,18 @@ async def test_otel_spans_generated(pyflows_config):
         assert len(spans) > 0, "no spans exported"
 
         span_names = [s.name for s in spans]
-        workflow_spans = [n for n in span_names if n.startswith("pyflows.workflow.")]
-        step_spans = [n for n in span_names if n.startswith("pyflows.step.")]
+        workflow_spans = [n for n in span_names if n.startswith("pgflows.workflow.")]
+        step_spans = [n for n in span_names if n.startswith("pgflows.step.")]
 
         assert workflow_spans, f"no workflow spans found; got: {span_names}"
         assert step_spans, f"no step spans found; got: {span_names}"
 
         # Workflow span carries the expected attributes.
-        wf_span = next(s for s in spans if s.name.startswith("pyflows.workflow."))
+        wf_span = next(s for s in spans if s.name.startswith("pgflows.workflow."))
         attrs = wf_span.attributes or {}
-        assert "pyflows.workflow.name" in attrs
-        assert "pyflows.workflow.id" in attrs
-        assert attrs["pyflows.workflow.id"] == instance_id
+        assert "pgflows.workflow.name" in attrs
+        assert "pgflows.workflow.id" in attrs
+        assert attrs["pgflows.workflow.id"] == instance_id
     finally:
         await app.close()
 
@@ -510,8 +510,8 @@ class DlqOutput(BaseModel):
 
 
 @pytest.mark.asyncio
-async def test_failed_workflow_archived_not_requeued(pyflows_config):
-    app = WorkflowApp(config=pyflows_config)
+async def test_failed_workflow_archived_not_requeued(pgflows_config):
+    app = WorkflowApp(config=pgflows_config)
 
     @app.step(retry=RetryConfig(max_retries=0, initial_delay_seconds=0.0))
     async def dlq_explodes(ctx: StepContext, input: DlqInput) -> DlqOutput:
@@ -534,10 +534,10 @@ async def test_failed_workflow_archived_not_requeued(pyflows_config):
         assert second_pass == 0, "failed workflow was re-queued instead of archived"
 
         # Confirm the message is in the pgmq archive table.
-        conn = await asyncpg.connect(pyflows_config.dsn, ssl=False)
+        conn = await asyncpg.connect(pgflows_config.dsn, ssl=False)
         try:
             count = await conn.fetchval(
-                f"SELECT COUNT(*) FROM pgmq.a_{pyflows_config.workflow_queue}"
+                f"SELECT COUNT(*) FROM pgmq.a_{pgflows_config.workflow_queue}"
                 " WHERE message->>'instance_id' = $1",
                 instance_id,
             )
@@ -563,9 +563,9 @@ class ClaimOutput(BaseModel):
 
 
 @pytest.mark.asyncio
-async def test_duplicate_message_processed_only_once(pyflows_config):
+async def test_duplicate_message_processed_only_once(pgflows_config):
     call_count = {"n": 0}
-    app = WorkflowApp(config=pyflows_config)
+    app = WorkflowApp(config=pgflows_config)
 
     @app.step()
     async def claim_step(ctx: StepContext, input: ClaimInput) -> ClaimOutput:
@@ -582,7 +582,7 @@ async def test_duplicate_message_processed_only_once(pyflows_config):
 
         # Simulate re-delivery: inject a duplicate message for the same instance.
         await app._queue.enqueue(
-            pyflows_config.workflow_queue,
+            pgflows_config.workflow_queue,
             {"workflow_name": "claim_workflow", "instance_id": instance_id, "input": {"v": 7}},
         )
 
@@ -614,9 +614,9 @@ class ComposeOutput(BaseModel):
 
 
 @pytest.mark.asyncio
-async def test_runtime_compose_produces_valid_dsl(pyflows_config):
+async def test_runtime_compose_produces_valid_dsl(pgflows_config):
     """compose() builds pg_durable DSL from step names registered against a real app."""
-    app = WorkflowApp(config=pyflows_config)
+    app = WorkflowApp(config=pgflows_config)
 
     @app.step()
     async def compose_double(ctx: StepContext, input: ComposeInput) -> ComposeOutput:
@@ -653,9 +653,9 @@ async def test_runtime_compose_produces_valid_dsl(pyflows_config):
 
 
 @pytest.mark.asyncio
-async def test_runtime_compose_steps_are_executable(pyflows_config):
+async def test_runtime_compose_steps_are_executable(pgflows_config):
     """Steps referenced in compose() are real, runnable Python functions."""
-    app = WorkflowApp(config=pyflows_config)
+    app = WorkflowApp(config=pgflows_config)
 
     @app.step()
     async def rt_square(ctx: StepContext, input: ComposeInput) -> ComposeOutput:

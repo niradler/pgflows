@@ -5,7 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import get_type_hints
 
-from pyflows.types import RetryConfig
+from pgflows.types import RetryConfig
 
 
 @dataclass
@@ -79,7 +79,7 @@ class WorkflowRegistry:
             step_defaults=step_defaults or RetryConfig(),
         )
         self._workflows[wf_name] = defn
-        fn._pyflows_name = wf_name  # type: ignore[attr-defined]
+        fn._pgflows_name = wf_name  # type: ignore[attr-defined]
         return defn
 
     def get_step(self, name: str) -> StepDefinition:

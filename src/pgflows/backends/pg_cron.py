@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import asyncpg
 
-from pyflows.backends.base import SchedulerBackend
-from pyflows.exceptions import BackendNotInitializedError, SchedulerJobNotFoundError
-from pyflows.logger import get_logger
-from pyflows.types import ScheduledJob
+from pgflows.backends.base import SchedulerBackend
+from pgflows.exceptions import BackendNotInitializedError, SchedulerJobNotFoundError
+from pgflows.logger import get_logger
+from pgflows.types import ScheduledJob
 
 _log = get_logger("scheduler")
 

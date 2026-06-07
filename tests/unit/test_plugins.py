@@ -5,14 +5,14 @@ import logging
 import pytest
 from pydantic import BaseModel
 
-from pyflows.plugins import LoggingPlugin, PyflowsPlugin, StepEvent, WorkflowEvent, fire
+from pgflows.plugins import LoggingPlugin, PgflowsPlugin, StepEvent, WorkflowEvent, fire
 
 
 class SampleInput(BaseModel):
     x: int
 
 
-class TrackerPlugin(PyflowsPlugin):
+class TrackerPlugin(PgflowsPlugin):
     """Records which hooks were called and with what args."""
 
     def __init__(self) -> None:
@@ -50,7 +50,7 @@ async def test_fire_calls_all_plugins() -> None:
 
 @pytest.mark.asyncio
 async def test_fire_swallows_plugin_errors() -> None:
-    class BrokenPlugin(PyflowsPlugin):
+    class BrokenPlugin(PgflowsPlugin):
         async def before_workflow(self, event: WorkflowEvent) -> None:
             raise RuntimeError("boom")
 
@@ -67,11 +67,11 @@ async def test_fire_empty_plugins_is_noop() -> None:
     await fire([], "before_workflow", event)  # must not raise
 
 
-# --- PyflowsPlugin base class ---
+# --- PgflowsPlugin base class ---
 
 @pytest.mark.asyncio
 async def test_base_plugin_all_hooks_are_noop() -> None:
-    class MinimalPlugin(PyflowsPlugin):
+    class MinimalPlugin(PgflowsPlugin):
         pass
 
     plugin = MinimalPlugin()
@@ -91,7 +91,7 @@ async def test_base_plugin_all_hooks_are_noop() -> None:
 async def test_logging_plugin_before_workflow(caplog: pytest.LogCaptureFixture) -> None:
     plugin = LoggingPlugin()
     event = WorkflowEvent(instance_id="abc-123", workflow_name="my_workflow")
-    with caplog.at_level(logging.INFO, logger="pyflows.plugins"):
+    with caplog.at_level(logging.INFO, logger="pgflows.plugins"):
         await plugin.before_workflow(event)
     assert "my_workflow" in caplog.text
     assert "abc-123" in caplog.text
@@ -101,7 +101,7 @@ async def test_logging_plugin_before_workflow(caplog: pytest.LogCaptureFixture) 
 async def test_logging_plugin_on_workflow_error(caplog: pytest.LogCaptureFixture) -> None:
     plugin = LoggingPlugin()
     event = WorkflowEvent(instance_id="abc-123", workflow_name="my_workflow")
-    with caplog.at_level(logging.ERROR, logger="pyflows.plugins"):
+    with caplog.at_level(logging.ERROR, logger="pgflows.plugins"):
         await plugin.on_workflow_error(event, ValueError("something broke"))
     assert "something broke" in caplog.text
 
@@ -112,7 +112,7 @@ async def test_logging_plugin_step_hooks(caplog: pytest.LogCaptureFixture) -> No
     event = StepEvent(
         instance_id="abc-123", workflow_name="wf", step_name="my_step", step_index=0, attempt=2
     )
-    with caplog.at_level(logging.INFO, logger="pyflows.plugins"):
+    with caplog.at_level(logging.INFO, logger="pgflows.plugins"):
         await plugin.before_step(event, SampleInput(x=5))
     assert "my_step" in caplog.text
     assert "2" in caplog.text  # attempt number
@@ -122,7 +122,7 @@ async def test_logging_plugin_step_hooks(caplog: pytest.LogCaptureFixture) -> No
 async def test_logging_plugin_custom_level(caplog: pytest.LogCaptureFixture) -> None:
     plugin = LoggingPlugin(level=logging.DEBUG)
     event = WorkflowEvent(instance_id="x", workflow_name="wf")
-    with caplog.at_level(logging.DEBUG, logger="pyflows.plugins"):
+    with caplog.at_level(logging.DEBUG, logger="pgflows.plugins"):
         await plugin.before_workflow(event)
     assert caplog.records  # at least one record emitted
 

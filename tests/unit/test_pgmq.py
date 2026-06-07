@@ -3,12 +3,12 @@ import urllib.parse
 
 import pytest
 
-from pyflows.backends.pgmq import PgmqBackend
-from pyflows.types import QueueMessage
+from pgflows.backends.pgmq import PgmqBackend
+from pgflows.types import QueueMessage
 
 TEST_DSN = os.getenv(
-    "PYFLOWS_TEST_DSN",
-    "postgresql://pyflows:pyflows@127.0.0.1:5433/pyflows_test",
+    "PGFLOWS_TEST_DSN",
+    "postgresql://pgflows:pgflows@127.0.0.1:5433/pgflows_test",
 )
 _PARSED_DSN = urllib.parse.urlparse(TEST_DSN)
 

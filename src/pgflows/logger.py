@@ -5,23 +5,23 @@ import sys
 
 
 def get_logger(name: str) -> logging.Logger:
-    """Return a structured logger for the given pyflows component name.
+    """Return a structured logger for the given pgflows component name.
 
-    All pyflows loggers share the 'pyflows' namespace and inherit from the
-    root 'pyflows' logger so users can configure them in one place:
+    All pgflows loggers share the 'pgflows' namespace and inherit from the
+    root 'pgflows' logger so users can configure them in one place:
 
         import logging
-        logging.getLogger("pyflows").setLevel(logging.DEBUG)
+        logging.getLogger("pgflows").setLevel(logging.DEBUG)
     """
-    return logging.getLogger(f"pyflows.{name}")
+    return logging.getLogger(f"pgflows.{name}")
 
 
 def configure_default_logging(level: int = logging.INFO) -> None:
-    """Install a sensible default handler on the root pyflows logger.
+    """Install a sensible default handler on the root pgflows logger.
 
     Call once at app startup if you don't configure logging yourself.
     """
-    logger = logging.getLogger("pyflows")
+    logger = logging.getLogger("pgflows")
     if logger.handlers:
         return
     handler = logging.StreamHandler(sys.stdout)

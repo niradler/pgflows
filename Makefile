@@ -2,7 +2,7 @@
 .PHONY: help install test test-unit test-e2e lint fmt up down clean
 
 # ── environment ──────────────────────────────────────────────────────────────
-PYFLOWS_TEST_DSN ?= postgresql://pyflows:pyflows@127.0.0.1:5433/pyflows_test
+PGFLOWS_TEST_DSN ?= postgresql://pgflows:pgflows@127.0.0.1:5433/pgflows_test
 
 # ── help ─────────────────────────────────────────────────────────────────────
 help:
@@ -31,13 +31,13 @@ down:
 
 # ── tests ─────────────────────────────────────────────────────────────────────
 test: up
-	PYFLOWS_TEST_DSN=$(PYFLOWS_TEST_DSN) uv run pytest tests/ -v
+	PGFLOWS_TEST_DSN=$(PGFLOWS_TEST_DSN) uv run pytest tests/ -v
 
 test-unit:
 	uv run pytest tests/unit/ -v
 
 test-e2e: up
-	PYFLOWS_TEST_DSN=$(PYFLOWS_TEST_DSN) uv run pytest tests/e2e/ -v
+	PGFLOWS_TEST_DSN=$(PGFLOWS_TEST_DSN) uv run pytest tests/e2e/ -v
 
 # ── code quality ──────────────────────────────────────────────────────────────
 lint:
