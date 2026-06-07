@@ -244,6 +244,25 @@ pip install pgflows
 uv add pgflows
 ```
 
+### Docker
+
+```bash
+# GitHub Container Registry
+docker pull ghcr.io/niradler/pgflows:latest
+
+# Docker Hub
+docker pull niradler/pgflows:latest
+```
+
+Extend the base image with your workflow code:
+
+```dockerfile
+FROM ghcr.io/niradler/pgflows:latest
+WORKDIR /app
+COPY . .
+CMD ["python", "worker.py"]
+```
+
 ## Development
 
 ```bash
