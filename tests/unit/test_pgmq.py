@@ -7,7 +7,7 @@ import asyncpg
 import pytest
 
 from pgflows.backends.pgmq import PgmqBackend
-from pgflows.types import QueueMessage
+from pgflows.types import QueueMessage, QueueMetrics
 
 TEST_DSN = os.getenv(
     "PGFLOWS_TEST_DSN",
@@ -87,3 +87,69 @@ async def test_nack_makes_message_readable_again(backend):
     re_read = await backend.dequeue("test_unit_nack_q", batch_size=1)
     assert len(re_read) == 1
     await backend.ack("test_unit_nack_q", re_read[0].message_id)
+
+
+async def test_per_queue_vt_overrides_default(backend):
+    b = PgmqBackend(
+        pool=backend._pool,
+        visibility_timeout_seconds=5,
+        per_queue_vt={"custom_vt_q": 999},
+    )
+    assert b._vt_for("custom_vt_q") == 999
+    assert b._vt_for("other_q") == 5
+
+
+async def test_send_batch_enqueues_multiple(backend):
+    await backend._ensure_queue("test_unit_batch_q")
+    async with backend._pool.acquire() as conn:
+        await conn.execute("SELECT pgmq.purge_queue($1::text)", "test_unit_batch_q")
+    ids = await backend.send_batch("test_unit_batch_q", [{"i": 0}, {"i": 1}, {"i": 2}])
+    assert len(ids) == 3
+    assert all(i.isdigit() for i in ids)
+    msgs = await backend.dequeue("test_unit_batch_q", batch_size=10)
+    assert len(msgs) == 3
+    payloads = {m.payload["i"] for m in msgs}
+    assert payloads == {0, 1, 2}
+
+
+async def test_metrics_returns_queue_metrics(backend):
+    await backend._ensure_queue("test_unit_metrics_q")
+    await backend.enqueue("test_unit_metrics_q", {"data": 1})
+    result = await backend.metrics("test_unit_metrics_q")
+    assert len(result) == 1
+    assert isinstance(result[0], QueueMetrics)
+    assert result[0].queue_name == "test_unit_metrics_q"
+    assert result[0].queue_length >= 1
+
+
+async def test_metrics_all_returns_list(backend):
+    await backend._ensure_queue("test_unit_metrics_all_q")
+    result = await backend.metrics()
+    assert isinstance(result, list)
+    assert all(isinstance(m, QueueMetrics) for m in result)
+    names = [m.queue_name for m in result]
+    assert "test_unit_metrics_all_q" in names
+
+
+async def test_list_queues_includes_created_queue(backend):
+    await backend._ensure_queue("test_unit_listq_q")
+    queues = await backend.list_queues()
+    assert "test_unit_listq_q" in queues
+
+
+async def test_purge_queue_removes_all_messages(backend):
+    await backend._ensure_queue("test_unit_purge_q")
+    await backend.enqueue("test_unit_purge_q", {"x": 1})
+    await backend.enqueue("test_unit_purge_q", {"x": 2})
+    count = await backend.purge_queue("test_unit_purge_q")
+    assert count >= 2
+    msgs = await backend.dequeue("test_unit_purge_q", batch_size=10)
+    assert len(msgs) == 0
+
+
+async def test_drop_queue_removes_queue(backend):
+    await backend._ensure_queue("test_unit_drop_q")
+    await backend.drop_queue("test_unit_drop_q")
+    queues = await backend.list_queues()
+    assert "test_unit_drop_q" not in queues
+    assert "test_unit_drop_q" not in backend._known_queues

@@ -16,7 +16,7 @@ from pgflows.registry import WorkflowRegistry
 from pgflows.sql_exporter import SqlExporter
 from pgflows.step_worker import StepWorker
 from pgflows.telemetry import PgflowsTelemetry
-from pgflows.types import RetryConfig, WorkflowState, WorkflowStatus
+from pgflows.types import QueueMetrics, RetryConfig, WorkflowState, WorkflowStatus
 from pgflows.worker import WorkflowWorker
 
 if TYPE_CHECKING:
@@ -53,6 +53,9 @@ class WorkflowApp:
         self._queue = PgmqBackend(
             pool=self._state._pool,  # type: ignore[arg-type]  # non-None post-initialize
             visibility_timeout_seconds=self.config.step_visibility_timeout_seconds,
+            per_queue_vt={
+                self.config.workflow_queue: self.config.workflow_visibility_timeout_seconds
+            },
         )
         await self._queue.initialize()
         await self._queue._ensure_queue(self.config.workflow_queue)
@@ -155,6 +158,44 @@ class WorkflowApp:
     async def cancel(self, instance_id: str) -> None:
         self._assert_initialized()
         await self._state.cancel_workflow(instance_id)  # type: ignore[union-attr]
+
+    async def start_batch(self, workflow_fn: Callable, inputs: list[BaseModel]) -> list[str]:
+        """Enqueue multiple workflow runs atomically. Returns list of instance_ids."""
+        self._assert_initialized()
+        defn = self.registry.get_workflow(
+            getattr(workflow_fn, "_pgflows_name", workflow_fn.__name__)
+        )
+        instance_ids: list[str] = []
+        messages: list[dict] = []
+        for input_model in inputs:
+            input_dict = input_model.model_dump()
+            instance_id = await self._state.create_instance(defn.name, input_dict)  # type: ignore[union-attr]
+            instance_ids.append(instance_id)
+            messages.append(
+                {"workflow_name": defn.name, "instance_id": instance_id, "input": input_dict}
+            )
+        await self._queue.send_batch(self.config.workflow_queue, messages)  # type: ignore[union-attr]
+        return instance_ids
+
+    async def queue_metrics(self, queue: str | None = None) -> list[QueueMetrics]:
+        """Return pgmq metrics for one queue (by name) or all queues (queue=None)."""
+        self._assert_initialized()
+        return await self._queue.metrics(queue)  # type: ignore[union-attr]
+
+    async def list_queues(self) -> list[str]:
+        """Return names of all pgmq queues in this database."""
+        self._assert_initialized()
+        return await self._queue.list_queues()  # type: ignore[union-attr]
+
+    async def purge_queue(self, queue: str) -> int:
+        """Delete all messages in a queue. Returns count of deleted messages."""
+        self._assert_initialized()
+        return await self._queue.purge_queue(queue)  # type: ignore[union-attr]
+
+    async def drop_queue(self, queue: str) -> None:
+        """Drop a queue and all its messages permanently."""
+        self._assert_initialized()
+        await self._queue.drop_queue(queue)  # type: ignore[union-attr]
 
     async def run_worker(self) -> None:
         """Run the worker loop (blocking). Use asyncio.create_task for background."""
