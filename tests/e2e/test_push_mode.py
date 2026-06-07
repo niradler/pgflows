@@ -7,6 +7,8 @@ These tests require:
 
 from __future__ import annotations
 
+import os
+
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
@@ -15,8 +17,14 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from pydantic import BaseModel
 
 from pgflows.app import WorkflowApp
+from pgflows.config import PgflowsConfig
 from pgflows.fastapi_integration import create_pgflows_router
 from pgflows.telemetry import PgflowsTelemetry
+
+_TEST_DSN = os.getenv(
+    "PGFLOWS_TEST_DSN",
+    "postgresql://pgflows:pgflows@127.0.0.1:5433/pgflows_test",
+)
 
 # ---------------------------------------------------------------------------
 # Shared fixtures  (function-scoped so pool and event loop stay aligned)
@@ -29,6 +37,14 @@ class GreetInput(BaseModel):
 
 class GreetOutput(BaseModel):
     message: str
+
+
+@pytest.fixture
+def pgflows_config():
+    # Function-scoped to stay in the same event loop as the async fixtures below.
+    return PgflowsConfig(
+        dsn=_TEST_DSN, workflow_queue="pgflows_e2e_q", otel_enabled=False, db_ssl=False
+    )
 
 
 @pytest_asyncio.fixture
@@ -180,7 +196,7 @@ async def test_push_step_emits_otel_span(pgflows_config):
     app._telemetry = PgflowsTelemetry.with_in_memory_exporter(exporter)
 
     @app.step()
-    async def greet(ctx, input: GreetInput) -> GreetOutput:
+    async def greet_span(ctx, input: GreetInput) -> GreetOutput:
         return GreetOutput(message=f"hello, {input.name}")
 
     await app.initialize()
@@ -192,7 +208,7 @@ async def test_push_step_emits_otel_span(pgflows_config):
             transport=ASGITransport(app=fastapi_app), base_url="http://test"
         ) as client:
             resp = await client.post(
-                "/pgflows/steps/greet",
+                "/pgflows/steps/greet_span",
                 json={"name": "span-test"},
                 headers={"X-DF-Instance-ID": "span-e2e-99"},
             )
@@ -200,8 +216,8 @@ async def test_push_step_emits_otel_span(pgflows_config):
         spans = exporter.get_finished_spans()
         assert len(spans) == 1
         span = spans[0]
-        assert span.name == "pgflows.step.greet"
-        assert span.attributes["pgflows.step.name"] == "greet"
+        assert span.name == "pgflows.step.greet_span"
+        assert span.attributes["pgflows.step.name"] == "greet_span"
         assert span.attributes["pgflows.workflow.id"] == "span-e2e-99"
     finally:
         await app.close()

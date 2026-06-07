@@ -69,7 +69,7 @@ class WorkflowApp:
         if self._pg_durable_available:
             from pgflows.pg_durable_client import PgDurableClient
 
-            self._pg_durable_client = PgDurableClient(self._state._pool)  # type: ignore[arg-type]
+            self._pg_durable_client = PgDurableClient(self._state._pool)  # type: ignore[arg-type]  # _pool is non-None post-initialize
 
         self._worker = WorkflowWorker(
             registry=self.registry,
