@@ -1,28 +1,24 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from pyflows.backends.base import OrchestratorBackend
 from pyflows.exceptions import BackendNotInitializedError
 from pyflows.types import WorkflowStatus
 
-if TYPE_CHECKING:
-    pass
-
 
 class PgDurableBackend(OrchestratorBackend):
-    """pg_durable-backed orchestrator.
+    """pg_durable-backed orchestrator (not yet implemented).
 
-    Talks to Postgres via the pg_durable extension to start, signal,
-    and inspect durable workflow runs.
+    Placeholder for a future backend that talks directly to Postgres via the
+    pg_durable extension. Use PgStateBackend for the current stable backend.
     """
 
     def __init__(self, dsn: str) -> None:
         self._dsn = dsn
-        self._conn: Any = None  # asyncpg AsyncConnection, set after initialize()
+        self._conn: Any = None
 
     async def initialize(self) -> None:
-        # TODO(M2): open asyncpg AsyncConnection, verify pg_durable extension installed
         raise NotImplementedError
 
     async def start_workflow(
@@ -32,7 +28,6 @@ class PgDurableBackend(OrchestratorBackend):
         payload: dict[str, Any],
     ) -> str:
         self._assert_initialized()
-        # TODO(M3): call pg_durable.start_workflow() via asyncpg
         raise NotImplementedError
 
     async def signal_workflow(
@@ -42,17 +37,14 @@ class PgDurableBackend(OrchestratorBackend):
         data: dict[str, Any] | None = None,
     ) -> None:
         self._assert_initialized()
-        # TODO(M4): call pg_durable.signal() via asyncpg
         raise NotImplementedError
 
     async def get_workflow_status(self, workflow_id: str) -> WorkflowStatus:
         self._assert_initialized()
-        # TODO(M2): query pg_durable.workflows table
         raise NotImplementedError
 
     async def cancel_workflow(self, workflow_id: str) -> None:
         self._assert_initialized()
-        # TODO(M2): call pg_durable.cancel() via asyncpg
         raise NotImplementedError
 
     async def close(self) -> None:
