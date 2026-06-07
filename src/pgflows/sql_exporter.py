@@ -49,9 +49,10 @@ class SqlExporter:
     - ``"http"`` (default) — each step becomes a ``df.http()`` call to the push-mode
       FastAPI step endpoint. pg_durable makes an outbound request per step.
     - ``"worker"`` — each step becomes a native ``pgmq.send`` + ``pg_notify`` +
-      ``df.wait_for_signal`` chain. pg_durable enqueues the step and suspends; a
-      ``StepWorker`` runs the Python function and signals the result back. No inbound
-      HTTP server required.
+      poll-a-result-table chain (see ``dsl.worker_step``). pg_durable enqueues the step
+      and polls the result table; a ``StepWorker`` runs the Python function and INSERTs
+      the result. No inbound HTTP server required, and race-free (a poll row can't be
+      lost the way a fire-and-forget ``df.signal`` can).
 
     The exported SQL can be imported into any Postgres with pg_durable to transfer
     workflow definitions from dev → prod without code deployment.
@@ -157,8 +158,9 @@ class SqlExporter:
     def _step_sqls(self, ordered: list[str]) -> list[StepSql]:
         """Build per-step DSL fragments for the configured mode, in order.
 
-        In ``pgmq`` mode each step captures its result and the next step consumes it
-        (``$prev->'data'``), so the chain threads output → input like a pipeline; the
+        In ``worker`` mode each step captures its result and the next step consumes it
+        (``$<capture>::jsonb`` — df substitutes ``$capture`` with the read node's
+        first-column value), so the chain threads output → input like a pipeline; the
         first step receives the ``{input}`` durable var. ``http`` mode forwards the
         ``{input}`` durable var to every step.
         """

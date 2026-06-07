@@ -140,6 +140,12 @@ def worker_step(
     When captured, ``df`` substitutes ``$capture`` with the read node's first-column
     value — which is exactly the step's output — so a later step can thread it as
     ``input_expr="$capture::jsonb"``.
+
+    ``result_key`` must be unique per logical step invocation: the result table uses
+    ``ON CONFLICT (key) DO NOTHING``, so two calls sharing a key make the second read
+    the first's (stale) output. The default keys by step name, which collides if the
+    same step runs twice in one instance — pass a distinct ``result_key`` then (the
+    exporter appends the step index for exactly this reason).
     """
     _require_ident(step_name, "step_name")
     _require_ident(queue, "queue")
@@ -154,20 +160,21 @@ def worker_step(
     if not isinstance(poll_seconds, int):
         raise TypeError("poll_seconds must be int")
     key = result_key or f"{{sys_instance_id}}:{step_name}"
+    key_lit = _q(key)
 
     enqueue_sql = (
         f"SELECT pgmq.send('{queue}', json_build_object("
         f"'step','{step_name}',"
         f"'instance_id','{{sys_instance_id}}',"
-        f"'result_key','{key}',"
+        f"'result_key',{key_lit},"
         f"'input',{input_expr})::jsonb)"
     )
     notify_sql = f"SELECT pg_notify('{chan}','{{sys_instance_id}}')"
     poll = loop(
         sleep(poll_seconds),
-        sql_node(f"SELECT NOT EXISTS(SELECT 1 FROM {results_table} WHERE key = '{key}')"),
+        sql_node(f"SELECT NOT EXISTS(SELECT 1 FROM {results_table} WHERE key = {key_lit})"),
     )
-    read = sql_node(f"SELECT result FROM {results_table} WHERE key = '{key}'")
+    read = sql_node(f"SELECT result FROM {results_table} WHERE key = {key_lit}")
     node = sql_node(enqueue_sql) >> sql_node(notify_sql) >> poll >> read
     if capture is not None:
         node = node.capture(capture)
