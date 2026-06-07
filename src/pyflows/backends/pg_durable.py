@@ -19,10 +19,10 @@ class PgDurableBackend(OrchestratorBackend):
 
     def __init__(self, dsn: str) -> None:
         self._dsn = dsn
-        self._conn: Any = None  # psycopg AsyncConnection, set after initialize()
+        self._conn: Any = None  # asyncpg AsyncConnection, set after initialize()
 
     async def initialize(self) -> None:
-        # TODO(M2): open psycopg AsyncConnection, verify pg_durable extension installed
+        # TODO(M2): open asyncpg AsyncConnection, verify pg_durable extension installed
         raise NotImplementedError
 
     async def start_workflow(
@@ -32,7 +32,7 @@ class PgDurableBackend(OrchestratorBackend):
         payload: dict[str, Any],
     ) -> str:
         self._assert_initialized()
-        # TODO(M3): call pg_durable.start_workflow() via psycopg
+        # TODO(M3): call pg_durable.start_workflow() via asyncpg
         raise NotImplementedError
 
     async def signal_workflow(
@@ -42,7 +42,7 @@ class PgDurableBackend(OrchestratorBackend):
         data: dict[str, Any] | None = None,
     ) -> None:
         self._assert_initialized()
-        # TODO(M4): call pg_durable.signal() via psycopg
+        # TODO(M4): call pg_durable.signal() via asyncpg
         raise NotImplementedError
 
     async def get_workflow_status(self, workflow_id: str) -> WorkflowStatus:
@@ -52,7 +52,7 @@ class PgDurableBackend(OrchestratorBackend):
 
     async def cancel_workflow(self, workflow_id: str) -> None:
         self._assert_initialized()
-        # TODO(M2): call pg_durable.cancel() via psycopg
+        # TODO(M2): call pg_durable.cancel() via asyncpg
         raise NotImplementedError
 
     async def close(self) -> None:
