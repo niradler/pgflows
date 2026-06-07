@@ -133,3 +133,20 @@ Notes for push-mode internals (learned by running real workflows on `df`):
   `df.wait_for_signal`: a NOTIFY-woken worker can signal before `df` registers the
   waiter, and that signal is dropped. The poll table is race-free (the row persists);
   `wait_for_signal` remains the right primitive for genuinely external events.
+- Prefer `app.worker_step(...)` over the bare `worker_step(...)` builder: it binds the
+  configured `step_queue`/`step_notify_channel`. The bare builder hardcodes `pgflows_steps`,
+  so a renamed queue silently enqueues where no worker listens and the instance hangs.
+- A captured `df.wait_for_signal` is the whole `{signal_name, timed_out, data}` envelope —
+  read the `df.signal` payload under `->'data'` (e.g. `$decision::jsonb->'data'->>'approved'`).
+- **pg_durable composition limits (bundled build, verified live — don't "fix" in pgflows):**
+  a join (`&`/`join3`) of trivial bare-SQL branches can hang (children `completed`, JOIN
+  `running`) while `worker_step`-branch joins resolve reliably; a loop and a parallel node
+  cannot share one instance (ContinueAsNew replay deadlock — split into separate `df.start`s);
+  `|` (race) is reliable only as a terminal node and does not cancel the loser. Accumulated
+  hung instances exhaust the worker connection pool (~10) and wedge the executor — cancel
+  stale `running` instances (`df.list_instances('running')` → `df.cancel`) or restart the DB
+  container before running the live suite.
+- Run history lives in the DB and is wrapped on `app.pg_durable`: `instance_info`,
+  `instance_nodes` (per-node trail; expands to structural THEN/JOIN/IF rows),
+  `instance_executions` (timing/events), `metrics` (cluster-wide). `app.acquire()` yields a
+  pooled connection for ad-hoc SQL around a run.
