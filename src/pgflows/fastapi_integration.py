@@ -4,10 +4,14 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
+from pgflows.logger import get_logger
+
 if TYPE_CHECKING:
     from fastapi import APIRouter
 
     from pgflows.app import WorkflowApp
+
+_log = get_logger("fastapi")
 
 
 class SignalRequest(BaseModel):
@@ -19,7 +23,11 @@ class StartRequest(BaseModel):
     input: dict[str, Any]
 
 
-def create_pgflows_router(app: WorkflowApp, prefix: str = "") -> APIRouter:
+def create_pgflows_router(
+    app: WorkflowApp,
+    prefix: str = "",
+    auth_dependency: Any | None = None,
+) -> APIRouter:
     """Create a FastAPI router with pgflows push-mode and management endpoints.
 
     Mount on your FastAPI app::
@@ -27,11 +35,17 @@ def create_pgflows_router(app: WorkflowApp, prefix: str = "") -> APIRouter:
         router = create_pgflows_router(app, prefix="/pgflows")
         fastapi_app.include_router(router)
 
+    Pass ``auth_dependency`` to protect all routes::
+
+        from fastapi import Depends, Security
+        router = create_pgflows_router(app, auth_dependency=verify_token)
+
     pg_durable calls POST {base_url}/steps/{step_name} for each step.
     """
-    from fastapi import APIRouter, Body, Header, HTTPException
+    from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query
 
-    router = APIRouter(prefix=prefix, tags=["pgflows"])
+    _dependencies = [Depends(auth_dependency)] if auth_dependency is not None else []
+    router = APIRouter(prefix=prefix, tags=["pgflows"], dependencies=_dependencies)
 
     @router.post("/steps/{step_name}", summary="Push endpoint for pg_durable")
     async def execute_step(
@@ -64,8 +78,9 @@ def create_pgflows_router(app: WorkflowApp, prefix: str = "") -> APIRouter:
         try:
             with app.telemetry.step_span(instance_id, step_name, 0):
                 result = await step_defn.fn(ctx, input_obj)
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc))
+        except Exception:
+            _log.exception("step '%s' execution failed (instance=%s)", step_name, instance_id)
+            raise HTTPException(status_code=500, detail="Internal server error")
 
         if isinstance(result, BaseModel):
             return result.model_dump()
@@ -92,8 +107,8 @@ def create_pgflows_router(app: WorkflowApp, prefix: str = "") -> APIRouter:
     async def get_workflow_status(workflow_id: str) -> dict[str, Any]:
         try:
             status = await app.get_status(workflow_id)
-        except Exception as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
+        except Exception:
+            raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found")
         return status.model_dump()
 
     @router.delete("/workflows/{workflow_id}", summary="Cancel a workflow")
@@ -119,7 +134,7 @@ def create_pgflows_router(app: WorkflowApp, prefix: str = "") -> APIRouter:
         }
 
     @router.get("/workflows", summary="List workflow instances")
-    async def list_workflows(limit: int = 100) -> list[dict[str, Any]]:
+    async def list_workflows(limit: int = Query(default=100, ge=1, le=1000)) -> list[dict[str, Any]]:
         instances = await app.list_workflows(limit=limit)
         return [i.model_dump() for i in instances]
 

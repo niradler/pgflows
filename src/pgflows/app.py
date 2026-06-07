@@ -58,6 +58,7 @@ class WorkflowApp:
             database=(parsed.path or "/postgres").lstrip("/"),
             username=parsed.username or "postgres",
             password=parsed.password or "postgres",
+            visibility_timeout_seconds=self.config.step_visibility_timeout_seconds,
         )
         await self._queue.initialize()
         await self._queue._ensure_queue(self.config.workflow_queue)

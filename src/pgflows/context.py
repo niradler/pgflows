@@ -96,7 +96,11 @@ class WorkflowContext:
                     )
                     await fire(self._plugins, "before_step", event, input_model)
                     ctx = StepContext(self.instance_id, step_name)
-                    result = await fn(ctx, input_model)
+                    timeout = self._get_step_timeout(fn)
+                    if timeout is not None:
+                        result = await asyncio.wait_for(fn(ctx, input_model), timeout=timeout)
+                    else:
+                        result = await fn(ctx, input_model)
                     output = result.model_dump() if isinstance(result, BaseModel) else result
                     await self._state.save_step_result(
                         self.instance_id,
@@ -145,6 +149,12 @@ class WorkflowContext:
         if step_defn is None or not step_defn.retry_overridden:
             return None
         return step_defn.retry
+
+    def _get_step_timeout(self, fn: Callable) -> float | None:
+        if self._registry is None:
+            return None
+        step_defn = self._registry.get_step_by_function(fn)
+        return step_defn.timeout_seconds if step_defn else None
 
 
 class StepContext:

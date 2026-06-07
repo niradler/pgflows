@@ -111,7 +111,80 @@ def test_execute_step_exception_returns_500():
     with TestClient(app2) as client:
         resp = client.post("/test/steps/boom", json={"message": "x"})
     assert resp.status_code == 500
-    assert "intentional error" in resp.json()["detail"]
+    # Internal exception details must NOT be exposed to callers
+    assert resp.json()["detail"] == "Internal server error"
+    assert "intentional error" not in resp.json()["detail"]
+
+
+def test_get_workflow_status_not_found_returns_generic_message():
+    app, fastapi_app = _make_app_with_step()
+    app.get_status = AsyncMock(side_effect=Exception("uuid cast error from asyncpg"))  # type: ignore[method-assign]
+    with TestClient(fastapi_app) as client:
+        resp = client.get("/pgflows/workflows/bad-id")
+    assert resp.status_code == 404
+    # Internal DB error must not appear in the response
+    assert "uuid cast error" not in resp.json()["detail"]
+    assert "bad-id" in resp.json()["detail"]  # generic but identifies the resource
+
+
+def test_list_workflows_rejects_overlimit():
+    _, fastapi_app = _make_app_with_step()
+    with TestClient(fastapi_app) as client:
+        resp = client.get("/pgflows/workflows?limit=1001")
+    assert resp.status_code == 422
+
+
+def test_list_workflows_rejects_zero_limit():
+    _, fastapi_app = _make_app_with_step()
+    with TestClient(fastapi_app) as client:
+        resp = client.get("/pgflows/workflows?limit=0")
+    assert resp.status_code == 422
+
+
+def test_list_workflows_accepts_max_limit():
+    _, fastapi_app = _make_app_with_step()
+    with TestClient(fastapi_app) as client:
+        resp = client.get("/pgflows/workflows?limit=1000")
+    assert resp.status_code == 200
+
+
+def test_auth_dependency_blocks_unauthenticated_requests():
+    from fastapi import HTTPException as FastAPIHTTPException
+
+    def reject_all():
+        raise FastAPIHTTPException(status_code=401, detail="Unauthorized")
+
+    app, _ = _make_app_with_step()
+    router = create_pgflows_router(app, prefix="/secure", auth_dependency=reject_all)
+    secured_app = FastAPI()
+    secured_app.include_router(router)
+
+    with TestClient(secured_app, raise_server_exceptions=False) as client:
+        assert client.post("/secure/steps/echo", json={"message": "hi"}).status_code == 401
+        assert client.get("/secure/workflows").status_code == 401
+        assert client.get("/secure/workflows/some-id").status_code == 401
+
+
+def test_auth_dependency_allows_authenticated_requests():
+    def allow_all():
+        return None  # passes — no exception raised
+
+    app, _ = _make_app_with_step()
+    router = create_pgflows_router(app, prefix="/ok", auth_dependency=allow_all)
+    ok_app = FastAPI()
+    ok_app.include_router(router)
+
+    with TestClient(ok_app) as client:
+        resp = client.post("/ok/steps/echo", json={"message": "hi"})
+    assert resp.status_code == 200
+
+
+def test_no_auth_dependency_is_open():
+    """Default (no auth_dependency) keeps routes open — backwards-compatible."""
+    _, fastapi_app = _make_app_with_step()
+    with TestClient(fastapi_app) as client:
+        resp = client.post("/pgflows/steps/echo", json={"message": "hi"})
+    assert resp.status_code == 200
 
 
 # ---------------------------------------------------------------------------
