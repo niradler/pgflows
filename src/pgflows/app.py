@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import urllib.parse
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
@@ -14,6 +15,10 @@ from pgflows.registry import WorkflowRegistry
 from pgflows.telemetry import PgflowsTelemetry
 from pgflows.types import RetryConfig, WorkflowState, WorkflowStatus
 from pgflows.worker import WorkflowWorker
+
+if TYPE_CHECKING:
+    # Lazy import — PgDurableClient is only available when pg_durable is installed.
+    from pgflows.pg_durable_client import PgDurableClient
 
 
 class WorkflowApp:
@@ -29,6 +34,7 @@ class WorkflowApp:
         self._worker: WorkflowWorker | None = None
         self._initialized = False
         self._pg_durable_available: bool = False
+        self._pg_durable_client: PgDurableClient | None = None
 
     async def initialize(self) -> None:
         """Apply pending DB migrations, open connection pools, register workflows."""
@@ -51,13 +57,19 @@ class WorkflowApp:
         await self._queue.initialize()
         await self._queue._ensure_queue(self.config.workflow_queue)
 
-        self._telemetry = (
-            PgflowsTelemetry.from_env(self.config.otel_service_name)
-            if self.config.otel_enabled
-            else PgflowsTelemetry.noop()
-        )
+        if self._telemetry is None:
+            self._telemetry = (
+                PgflowsTelemetry.from_env(self.config.otel_service_name)
+                if self.config.otel_enabled
+                else PgflowsTelemetry.noop()
+            )
 
         self._pg_durable_available = await self._state.check_extension("df")
+
+        if self._pg_durable_available:
+            from pgflows.pg_durable_client import PgDurableClient
+
+            self._pg_durable_client = PgDurableClient(self._state._pool)  # type: ignore[arg-type]  # _pool is non-None post-initialize
 
         self._worker = WorkflowWorker(
             registry=self.registry,
@@ -73,6 +85,34 @@ class WorkflowApp:
     def pg_durable_available(self) -> bool:
         """True if the pg_durable (df) extension is installed in the connected database."""
         return self._pg_durable_available
+
+    @property
+    def telemetry(self) -> PgflowsTelemetry:
+        """Active telemetry instance, or a no-op if not yet initialized."""
+        return self._telemetry or PgflowsTelemetry.noop()
+
+    @property
+    def pg_durable(self) -> PgDurableClient:
+        """Access the pg_durable runtime client.
+
+        Raises RuntimeError if pg_durable is not installed.
+        Check app.pg_durable_available first.
+        """
+        if self._pg_durable_client is None:
+            raise RuntimeError(
+                "pg_durable (df) extension not installed. "
+                "Check app.pg_durable_available first."
+            )
+        return self._pg_durable_client
+
+    async def list_instances(
+        self,
+        workflow_name: str | None = None,
+        state: WorkflowState | None = None,
+        limit: int = 100,
+    ) -> list[WorkflowStatus]:
+        """List workflow instances — alias for list_workflows() for pg_durable contexts."""
+        return await self.list_workflows(workflow_name=workflow_name, state=state, limit=limit)
 
     async def start(self, workflow_fn: Callable, input_model: BaseModel) -> str:
         """Enqueue a workflow run. Returns instance_id."""
