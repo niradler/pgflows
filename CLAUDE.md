@@ -41,8 +41,14 @@ Every infrastructure concern lives behind an ABC in `backends/base.py`. The rest
 | `worker.py` | Queue polling + dispatch loop |
 | `registry.py` | Decorator registration + type extraction |
 | `backends/` | All I/O (DB, queue, scheduler) |
+| `backends/base.py` | ABCs for all backends |
+| `backends/pg_durable.py` | pg_durable extension backend |
 | `telemetry.py` | OTel span management |
 | `sql_exporter.py` | pg_durable DSL generation |
+| `dsl.py` | Python DSL builders for pg_durable operators |
+| `fastapi_integration.py` | FastAPI router for push-mode endpoints |
+| `migrations.py` | Automatic schema migration on `initialize()` |
+| `pg_durable_client.py` | High-level client for pg_durable operations |
 
 Cross-module imports must flow downward (app → worker → context → backends). No circular deps.
 
@@ -72,10 +78,22 @@ Cross-module imports must flow downward (app → worker → context → backends
 ## Commands
 
 ```bash
-uv sync                          # install deps
-uv run pytest tests/unit/        # unit tests (no DB needed)
-docker compose up -d             # start Postgres
-uv run pytest tests/e2e/         # E2E tests
-uv run ruff check src/ tests/    # lint
-uv run ruff check --fix          # lint + autofix
+make install                     # uv sync
+make up                          # docker compose up -d --wait
+make test-unit                   # unit tests (no DB)
+make test-e2e                    # E2E tests (starts Postgres first)
+make lint                        # ruff check
+make fmt                         # ruff check --fix
+
+# Run a single test
+uv run pytest tests/unit/test_app.py::test_initialize -v
+
+# E2E tests use Postgres at 127.0.0.1:5433 (set via PGFLOWS_TEST_DSN)
+PGFLOWS_TEST_DSN=postgresql://pgflows:pgflows@127.0.0.1:5433/pgflows_test uv run pytest tests/e2e/ -v
+```
+
+Install the FastAPI optional dependency when working on push-mode features:
+
+```bash
+uv sync --extra fastapi
 ```
