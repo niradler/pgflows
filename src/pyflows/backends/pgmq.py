@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Callable, Coroutine
-from typing import Any
+from typing import Any  # noqa: F401 — Callable/Coroutine used in listen signature
 
 from tembo_pgmq_python.async_queue import PGMQueue
 
@@ -83,7 +83,7 @@ class PgmqBackend(QueueBackend):
         # Reset visibility timeout to 0 so message is immediately re-readable
         await self._client.set_vt(queue, int(message_id), 0)
 
-    async def listen(  # type: ignore[override]
+    async def listen(
         self,
         queue: str,
         callback: Callable[[QueueMessage], Coroutine[Any, Any, None]],

@@ -8,7 +8,7 @@ TEST_DSN = "postgresql://pyflows:pyflows@localhost:5433/pyflows_test"
 
 
 @pytest.fixture
-async def state():
+async def state(require_db):
     backend = PgStateBackend(dsn=TEST_DSN)
     await backend.initialize()
     yield backend

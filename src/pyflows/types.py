@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -44,7 +44,7 @@ class ScheduledJob(BaseModel):
 
 class RetryConfig(BaseModel):
     max_retries: int = 3
-    backoff: str = "exponential"
+    backoff: Literal["exponential", "linear"] = "exponential"
     initial_delay_seconds: float = 1.0
     max_delay_seconds: float = 60.0
     jitter: bool = True

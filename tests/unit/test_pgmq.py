@@ -14,7 +14,7 @@ PGMQ_ARGS = dict(
 
 
 @pytest.fixture
-async def backend():
+async def backend(require_db):
     b = PgmqBackend(**PGMQ_ARGS)
     await b.initialize()
     yield b

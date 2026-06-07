@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator, Callable, Coroutine
 from typing import Any
 
 from pyflows.types import QueueMessage, ScheduledJob, WorkflowStatus
@@ -72,14 +71,6 @@ class QueueBackend(ABC):
     @abstractmethod
     async def nack(self, queue: str, message_id: str) -> None:
         """Return a message to the queue for redelivery."""
-
-    @abstractmethod
-    def listen(
-        self,
-        queue: str,
-        callback: Callable[[QueueMessage], Coroutine[Any, Any, None]],
-    ) -> AsyncIterator[None]:
-        """Stream messages from the queue, calling callback for each."""
 
     @abstractmethod
     async def close(self) -> None:

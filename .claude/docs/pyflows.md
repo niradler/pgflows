@@ -83,7 +83,7 @@ Tables: `df.instances`, `df.nodes`. No Python client exists — we call these vi
 - [ ] M5: FastAPI integration — push endpoint only (deferred; pull mode works without it)
 - [x] M6: Plugin system — PyflowsPlugin ABC, LoggingPlugin, lifecycle hooks (before/after/error) in worker + context, fire() helper swallows plugin errors (10 unit tests)
 - [x] M7: Migrations + pg_cron scheduler — migration runner (run_migrations, schema_migrations table, versioned SQL), PgCronBackend implemented with asyncpg, pg_state migrated to asyncpg with JSONB codecs (16 unit tests)
-- [ ] M8: AI SRE example + README — shareable
+- [x] M8: AI SRE example + README — shareable (examples/ai_sre/workflow.py, README.md)
 
 ## README
 
@@ -120,6 +120,19 @@ Deps: `pydantic`, `psycopg[binary]`, `tembo-pgmq-python` (all latest, no pins)
 - Observability dashboard (post-M8)
 - Multi-tenant / RLS (pg_durable has this built-in via df.grant_usage(), surface in SDK)
 - Push mode (df.http) implementation strategy — plugin or core? (leaning plugin, M5/M6)
+- M5 (FastAPI push endpoint) deferred — pull mode covers current use cases
+- `RetryConfig.backoff` runtime branching not yet implemented (Literal type guard in place)
+- `PgmqBackend.listen()` is an async generator — not used by WorkflowWorker (uses dequeue); left as convenience API
+
+## M8 state (done 2026-06-07)
+
+- examples/ai_sre/workflow.py — 3-step typed workflow (health check → AI diagnosis → remediation)
+- README.md — quick start, plugin docs, scheduler docs, backend abstraction table
+- All non-critical code review findings addressed:
+  - RetryConfig.backoff: Literal["exponential", "linear"]
+  - listen() removed from QueueBackend ABC (not part of required contract)
+  - DB-dependent tests in tests/unit/ get require_db fixture → auto-skip when Postgres is down
+- 62 offline unit tests, 74 total (with DB)
 
 ## Evidence review — 2026-06-07
 
