@@ -1,5 +1,5 @@
 [project]
-name = "pyflows"
+name = "pgflows"
 version = "0.1.0"
 description = "Durable workflow engine SDK for Python + Postgres"
 readme = "README.md"
@@ -35,6 +35,9 @@ Issues = "https://github.com/niradler/pyflows/issues"
 [build-system]
 requires = ["uv_build>=0.10.0,<0.11.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "pyflows"
 
 [dependency-groups]
 dev = [
