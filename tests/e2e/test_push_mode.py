@@ -190,6 +190,32 @@ async def test_push_step_works_without_instance_id_header(async_client):
 # ---------------------------------------------------------------------------
 
 
+async def test_push_step_500_does_not_leak_internal_error(pgflows_config):
+    """A step that raises must return a generic 500 body — not the raw exception message."""
+    secret = "INTERNAL_SECRET_DB_ERROR_DETAILS"
+    app = WorkflowApp(config=pgflows_config)
+
+    @app.step()
+    async def leaky_step(ctx, input: GreetInput) -> GreetOutput:
+        raise RuntimeError(secret)
+
+    await app.initialize()
+    try:
+        fastapi_app = FastAPI()
+        router = create_pgflows_router(app, prefix="/pgflows")
+        fastapi_app.include_router(router)
+        async with AsyncClient(
+            transport=ASGITransport(app=fastapi_app), base_url="http://test"
+        ) as client:
+            resp = await client.post("/pgflows/steps/leaky_step", json={"name": "x"})
+        assert resp.status_code == 500
+        body = resp.json()
+        assert secret not in str(body), "Internal error detail must not be exposed to HTTP callers"
+        assert body["detail"] == "Internal server error"
+    finally:
+        await app.close()
+
+
 async def test_push_step_emits_otel_span(pgflows_config):
     exporter = InMemorySpanExporter()
     app = WorkflowApp(config=pgflows_config)
