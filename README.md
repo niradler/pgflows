@@ -235,8 +235,7 @@ docker compose -f tests/e2e/docker/docker-compose.yml up -d --wait
 uv run pytest tests/e2e/test_live_dfpgmq.py -v
 ```
 
-`docker-compose.full.yml` brings up the full two-container stack — that Postgres image
-plus the example app server (`Dockerfile.app` + `examples/server.py`).
+`compose.yml` brings up the full two-container stack — that Postgres image plus the example app server (`examples/server.py`).
 
 ## Observability — execution history
 
@@ -335,18 +334,28 @@ uv add pgflows
 
 ### Docker
 
-```bash
-# GitHub Container Registry
-docker pull ghcr.io/niradler/pgflows:latest
+Two images are published on every release:
 
-# Docker Hub
-docker pull niradler/pgflows:latest
+| Image | Registries | Tag scheme |
+| ----- | ---------- | ---------- |
+| **App** (Python SDK runtime) | `ghcr.io/niradler/pgflows` · `niradler/pgflows` | `latest`, `0.1.1` |
+| **Postgres** (pgmq + pg_durable pre-installed) | `niradler/pgflows-postgres` | `<pg>-<pgmq>-<pg_durable>` e.g. `17-1.5.1-0.2.2` |
+
+```bash
+# App image — GitHub Container Registry (preferred)
+docker pull ghcr.io/niradler/pgflows:0.1.1
+
+# App image — Docker Hub
+docker pull niradler/pgflows:0.1.1
+
+# Postgres image with pgmq 1.5.1 + pg_durable 0.2.2 on PG 17
+docker pull niradler/pgflows-postgres:17-1.5.1-0.2.2
 ```
 
-Extend the base image with your workflow code:
+Extend the app image with your workflow code:
 
 ```dockerfile
-FROM ghcr.io/niradler/pgflows:latest
+FROM ghcr.io/niradler/pgflows:0.1.1
 WORKDIR /app
 COPY . .
 CMD ["python", "worker.py"]
@@ -365,18 +374,6 @@ uv run ruff check src/ tests/    # lint
 ## AI SRE example
 
 See [`examples/ai_sre/workflow.py`](examples/ai_sre/workflow.py) for a full incident response workflow: health check → AI diagnosis → auto-remediation, with retries, plugin hooks, and typed I/O.
-
-## Roadmap
-
-- [x] M1 — Project scaffold: backend ABCs, Pydantic types, exception hierarchy
-- [x] M2 — Core SDK: `WorkflowApp`, `@step`, `@workflow`, `WorkflowContext`, replay engine
-- [x] M3 — SqlExporter: Python workflow → pg_durable DSL (AST-based)
-- [x] M4 — E2E test suite: basic, retry, monitor/cancel (Docker-based)
-- [x] M6 — Plugin system: `PgflowsPlugin` ABC, `LoggingPlugin`, lifecycle hooks
-- [x] M7 — Migrations + scheduler: versioned schema migrations, `PgCronBackend` via pg_durable
-- [x] M8 — AI SRE example, README, production hardening: DLQ, worker coordination, linear backoff, pg_durable detection
-- [x] M9 — PyPI release (`pgflows` on PyPI, Docker images on GHCR + Docker Hub)
-- [ ] M5 — FastAPI integration: push endpoint (deferred; pull mode works without it)
 
 ## License
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -131,9 +132,7 @@ class WorkflowApp:
     async def start(self, workflow_fn: Callable, input_model: BaseModel) -> str:
         """Enqueue a workflow run. Returns instance_id."""
         self._assert_initialized()
-        defn = self.registry.get_workflow(
-            getattr(workflow_fn, "_pgflows_name", workflow_fn.__name__)
-        )
+        defn = self._resolve_defn(workflow_fn)
         input_dict = input_model.model_dump()
         instance_id = await self._state.create_instance(defn.name, input_dict)  # type: ignore[union-attr]
         await self._queue.enqueue(  # type: ignore[union-attr]
@@ -160,22 +159,21 @@ class WorkflowApp:
         await self._state.cancel_workflow(instance_id)  # type: ignore[union-attr]
 
     async def start_batch(self, workflow_fn: Callable, inputs: list[BaseModel]) -> list[str]:
-        """Enqueue multiple workflow runs atomically. Returns list of instance_ids."""
+        """Enqueue multiple workflow runs. Returns list of instance_ids."""
         self._assert_initialized()
-        defn = self.registry.get_workflow(
-            getattr(workflow_fn, "_pgflows_name", workflow_fn.__name__)
-        )
-        instance_ids: list[str] = []
-        messages: list[dict] = []
-        for input_model in inputs:
+        defn = self._resolve_defn(workflow_fn)
+
+        async def _create(input_model: BaseModel) -> tuple[str, dict]:
             input_dict = input_model.model_dump()
             instance_id = await self._state.create_instance(defn.name, input_dict)  # type: ignore[union-attr]
-            instance_ids.append(instance_id)
-            messages.append(
-                {"workflow_name": defn.name, "instance_id": instance_id, "input": input_dict}
-            )
-        await self._queue.send_batch(self.config.workflow_queue, messages)  # type: ignore[union-attr]
-        return instance_ids
+            msg = {"workflow_name": defn.name, "instance_id": instance_id, "input": input_dict}
+            return instance_id, msg
+
+        results = await asyncio.gather(*(_create(m) for m in inputs))
+        await self._queue.send_batch(  # type: ignore[union-attr]
+            self.config.workflow_queue, [r[1] for r in results]
+        )
+        return [r[0] for r in results]
 
     async def queue_metrics(self, queue: str | None = None) -> list[QueueMetrics]:
         """Return pgmq metrics for one queue (by name) or all queues (queue=None)."""
@@ -303,6 +301,11 @@ class WorkflowApp:
             return fn
 
         return decorator
+
+    def _resolve_defn(self, workflow_fn: Callable):  # type: ignore[return]
+        return self.registry.get_workflow(
+            getattr(workflow_fn, "_pgflows_name", workflow_fn.__name__)
+        )
 
     def _assert_initialized(self) -> None:
         if not self._initialized:

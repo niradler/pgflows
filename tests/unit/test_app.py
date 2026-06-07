@@ -161,31 +161,15 @@ async def test_initialize_wires_workflow_vt_separately():
     assert captured["per_queue_vt"] == {"my_workflows": 120}
 
 
-async def test_queue_metrics_requires_initialized():
+async def test_queue_ops_require_initialized():
     app = _make_app()
-    with pytest.raises(RuntimeError, match="not initialized"):
-        await app.queue_metrics()
 
+    async def _assert_uninit(coro):
+        with pytest.raises(RuntimeError, match="not initialized"):
+            await coro
 
-async def test_list_queues_requires_initialized():
-    app = _make_app()
-    with pytest.raises(RuntimeError, match="not initialized"):
-        await app.list_queues()
-
-
-async def test_purge_queue_requires_initialized():
-    app = _make_app()
-    with pytest.raises(RuntimeError, match="not initialized"):
-        await app.purge_queue("q")
-
-
-async def test_drop_queue_requires_initialized():
-    app = _make_app()
-    with pytest.raises(RuntimeError, match="not initialized"):
-        await app.drop_queue("q")
-
-
-async def test_start_batch_requires_initialized():
-    app = _make_app()
-    with pytest.raises(RuntimeError, match="not initialized"):
-        await app.start_batch(lambda: None, [])
+    await _assert_uninit(app.queue_metrics())
+    await _assert_uninit(app.list_queues())
+    await _assert_uninit(app.purge_queue("q"))
+    await _assert_uninit(app.drop_queue("q"))
+    await _assert_uninit(app.start_batch(lambda: None, []))
