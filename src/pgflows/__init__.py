@@ -8,6 +8,15 @@ from pgflows.backends.pg_state import PgStateBackend
 from pgflows.backends.pgmq import PgmqBackend
 from pgflows.config import PgflowsConfig
 from pgflows.context import StepContext, WorkflowContext
+from pgflows.dsl import (
+    DslNode,
+    http,
+    loop,
+    sleep,
+    sql_node,
+    wait_for_schedule,
+    wait_for_signal,
+)
 from pgflows.exceptions import (
     BackendNotInitializedError,
     PgflowsError,
@@ -17,6 +26,7 @@ from pgflows.exceptions import (
     WorkflowNotFoundError,
 )
 from pgflows.logger import configure_default_logging, get_logger
+from pgflows.pg_durable_client import PgDurableClient
 from pgflows.plugins import LoggingPlugin, PgflowsPlugin, StepEvent, WorkflowEvent
 from pgflows.registry import WorkflowRegistry
 from pgflows.sql_exporter import DryRunResult, SqlExporter, StepSql
@@ -34,6 +44,16 @@ from pgflows.worker import WorkflowWorker
 __all__ = [
     # Main entry point
     "WorkflowApp",
+    # DSL builders
+    "DslNode",
+    "http",
+    "loop",
+    "sleep",
+    "sql_node",
+    "wait_for_schedule",
+    "wait_for_signal",
+    # pg_durable runtime client
+    "PgDurableClient",
     # Context
     "WorkflowContext",
     "StepContext",
