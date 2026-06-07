@@ -50,6 +50,16 @@ class RetryConfig(BaseModel):
     jitter: bool = True
 
 
+class QueueMetrics(BaseModel):
+    queue_name: str
+    queue_length: int
+    newest_msg_age_sec: int | None
+    oldest_msg_age_sec: int | None
+    total_messages: int
+    scrape_time: datetime
+    queue_visible_length: int
+
+
 class StepConfig(BaseModel):
     name: str
     retry: RetryConfig = Field(default_factory=RetryConfig)

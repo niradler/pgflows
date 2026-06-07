@@ -120,3 +120,56 @@ async def test_initialize_passes_visibility_timeout_to_pgmq_backend():
         await app.initialize()
 
     assert captured.get("visibility_timeout_seconds") == 120
+    assert captured.get("per_queue_vt") == {"pgflows_workflows": 300}
+
+
+async def test_initialize_wires_workflow_vt_separately():
+    """workflow_visibility_timeout_seconds maps exclusively to the workflow queue VT."""
+    config = PgflowsConfig(
+        dsn="postgresql://user:pass@localhost/db",
+        step_visibility_timeout_seconds=60,
+        workflow_visibility_timeout_seconds=120,
+        workflow_queue="my_workflows",
+    )
+    app = WorkflowApp(config=config)
+    captured: dict = {}
+
+    class _FakeBackend:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        async def initialize(self):
+            pass
+
+        async def _ensure_queue(self, q):
+            pass
+
+    with (
+        patch("pgflows.app.run_migrations", new=AsyncMock()),
+        patch("pgflows.app.PgStateBackend") as mock_state_cls,
+        patch("pgflows.app.PgmqBackend", new=_FakeBackend),
+    ):
+        mock_state = AsyncMock()
+        mock_state.list_workflows = MagicMock(return_value=[])
+        mock_state.register_workflow = AsyncMock()
+        mock_state.check_extension = AsyncMock(return_value=False)
+        mock_state._pool = MagicMock()
+        mock_state_cls.return_value = mock_state
+        await app.initialize()
+
+    assert captured["visibility_timeout_seconds"] == 60
+    assert captured["per_queue_vt"] == {"my_workflows": 120}
+
+
+async def test_queue_ops_require_initialized():
+    app = _make_app()
+
+    async def _assert_uninit(coro):
+        with pytest.raises(RuntimeError, match="not initialized"):
+            await coro
+
+    await _assert_uninit(app.queue_metrics())
+    await _assert_uninit(app.list_queues())
+    await _assert_uninit(app.purge_queue("q"))
+    await _assert_uninit(app.drop_queue("q"))
+    await _assert_uninit(app.start_batch(lambda: None, []))

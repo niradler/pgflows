@@ -10,6 +10,7 @@ class PgflowsConfig(BaseModel):
     step_notify_channel: str = "pgflows_steps"
     worker_concurrency: int = 10
     step_visibility_timeout_seconds: int = 300
+    workflow_visibility_timeout_seconds: int = 300
     otel_enabled: bool = True
     otel_service_name: str = "pgflows"
     db_ssl: bool = True

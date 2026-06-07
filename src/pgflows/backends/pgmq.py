@@ -8,7 +8,7 @@ from typing import Any
 import asyncpg
 
 from pgflows.backends.base import QueueBackend
-from pgflows.types import QueueMessage
+from pgflows.types import QueueMessage, QueueMetrics
 
 
 class PgmqBackend(QueueBackend):
@@ -18,10 +18,19 @@ class PgmqBackend(QueueBackend):
     Pass the same asyncpg.Pool as PgStateBackend to eliminate the duplicate connections.
     """
 
-    def __init__(self, pool: asyncpg.Pool, visibility_timeout_seconds: int = 30) -> None:
+    def __init__(
+        self,
+        pool: asyncpg.Pool,
+        visibility_timeout_seconds: int = 30,
+        per_queue_vt: dict[str, int] | None = None,
+    ) -> None:
         self._pool = pool
         self._vt = visibility_timeout_seconds
+        self._per_queue_vt: dict[str, int] = per_queue_vt or {}
         self._known_queues: set[str] = set()
+
+    def _vt_for(self, queue: str) -> int:
+        return self._per_queue_vt.get(queue, self._vt)
 
     async def initialize(self) -> None:
         pass
@@ -31,7 +40,7 @@ class PgmqBackend(QueueBackend):
             async with self._pool.acquire() as conn:
                 try:
                     await conn.execute("SELECT pgmq.create($1::text)", queue)
-                except Exception:
+                except asyncpg.PostgresError:
                     pass
             self._known_queues.add(queue)
 
@@ -52,7 +61,7 @@ class PgmqBackend(QueueBackend):
             rows = await conn.fetch(
                 "SELECT * FROM pgmq.read($1::text, $2::int, $3::int)",
                 queue,
-                self._vt,
+                self._vt_for(queue),
                 batch_size,
             )
         if not rows:
@@ -89,6 +98,45 @@ class PgmqBackend(QueueBackend):
             await conn.execute(
                 "SELECT pgmq.archive($1::text, $2::bigint)", queue, int(message_id)
             )
+
+    async def send_batch(
+        self,
+        queue: str,
+        messages: list[dict[str, Any]],
+        delay_seconds: int = 0,
+    ) -> list[str]:
+        await self._ensure_queue(queue)
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM pgmq.send_batch($1::text, $2::jsonb[], $3::int)",
+                queue,
+                messages,
+                delay_seconds,
+            )
+        return [str(r[0]) for r in rows]
+
+    async def metrics(self, queue: str | None = None) -> list[QueueMetrics]:
+        async with self._pool.acquire() as conn:
+            if queue is None:
+                rows = await conn.fetch("SELECT * FROM pgmq.metrics_all()")
+            else:
+                rows = await conn.fetch("SELECT * FROM pgmq.metrics($1::text)", queue)
+        return [QueueMetrics(**dict(r)) for r in rows]
+
+    async def list_queues(self) -> list[str]:
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch("SELECT * FROM pgmq.list_queues()")
+        return [r["queue_name"] for r in rows]
+
+    async def purge_queue(self, queue: str) -> int:
+        async with self._pool.acquire() as conn:
+            count = await conn.fetchval("SELECT pgmq.purge_queue($1::text)", queue)
+        return int(count)
+
+    async def drop_queue(self, queue: str) -> None:
+        async with self._pool.acquire() as conn:
+            await conn.execute("SELECT pgmq.drop_queue($1::text)", queue)
+        self._known_queues.discard(queue)
 
     async def listen(
         self,

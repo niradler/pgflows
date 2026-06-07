@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -16,7 +17,7 @@ from pgflows.registry import WorkflowRegistry
 from pgflows.sql_exporter import SqlExporter
 from pgflows.step_worker import StepWorker
 from pgflows.telemetry import PgflowsTelemetry
-from pgflows.types import RetryConfig, WorkflowState, WorkflowStatus
+from pgflows.types import QueueMetrics, RetryConfig, WorkflowState, WorkflowStatus
 from pgflows.worker import WorkflowWorker
 
 if TYPE_CHECKING:
@@ -53,6 +54,9 @@ class WorkflowApp:
         self._queue = PgmqBackend(
             pool=self._state._pool,  # type: ignore[arg-type]  # non-None post-initialize
             visibility_timeout_seconds=self.config.step_visibility_timeout_seconds,
+            per_queue_vt={
+                self.config.workflow_queue: self.config.workflow_visibility_timeout_seconds
+            },
         )
         await self._queue.initialize()
         await self._queue._ensure_queue(self.config.workflow_queue)
@@ -128,9 +132,7 @@ class WorkflowApp:
     async def start(self, workflow_fn: Callable, input_model: BaseModel) -> str:
         """Enqueue a workflow run. Returns instance_id."""
         self._assert_initialized()
-        defn = self.registry.get_workflow(
-            getattr(workflow_fn, "_pgflows_name", workflow_fn.__name__)
-        )
+        defn = self._resolve_defn(workflow_fn)
         input_dict = input_model.model_dump()
         instance_id = await self._state.create_instance(defn.name, input_dict)  # type: ignore[union-attr]
         await self._queue.enqueue(  # type: ignore[union-attr]
@@ -155,6 +157,43 @@ class WorkflowApp:
     async def cancel(self, instance_id: str) -> None:
         self._assert_initialized()
         await self._state.cancel_workflow(instance_id)  # type: ignore[union-attr]
+
+    async def start_batch(self, workflow_fn: Callable, inputs: list[BaseModel]) -> list[str]:
+        """Enqueue multiple workflow runs. Returns list of instance_ids."""
+        self._assert_initialized()
+        defn = self._resolve_defn(workflow_fn)
+
+        async def _create(input_model: BaseModel) -> tuple[str, dict]:
+            input_dict = input_model.model_dump()
+            instance_id = await self._state.create_instance(defn.name, input_dict)  # type: ignore[union-attr]
+            msg = {"workflow_name": defn.name, "instance_id": instance_id, "input": input_dict}
+            return instance_id, msg
+
+        results = await asyncio.gather(*(_create(m) for m in inputs))
+        await self._queue.send_batch(  # type: ignore[union-attr]
+            self.config.workflow_queue, [r[1] for r in results]
+        )
+        return [r[0] for r in results]
+
+    async def queue_metrics(self, queue: str | None = None) -> list[QueueMetrics]:
+        """Return pgmq metrics for one queue (by name) or all queues (queue=None)."""
+        self._assert_initialized()
+        return await self._queue.metrics(queue)  # type: ignore[union-attr]
+
+    async def list_queues(self) -> list[str]:
+        """Return names of all pgmq queues in this database."""
+        self._assert_initialized()
+        return await self._queue.list_queues()  # type: ignore[union-attr]
+
+    async def purge_queue(self, queue: str) -> int:
+        """Delete all messages in a queue. Returns count of deleted messages."""
+        self._assert_initialized()
+        return await self._queue.purge_queue(queue)  # type: ignore[union-attr]
+
+    async def drop_queue(self, queue: str) -> None:
+        """Drop a queue and all its messages permanently."""
+        self._assert_initialized()
+        await self._queue.drop_queue(queue)  # type: ignore[union-attr]
 
     async def run_worker(self) -> None:
         """Run the worker loop (blocking). Use asyncio.create_task for background."""
@@ -262,6 +301,11 @@ class WorkflowApp:
             return fn
 
         return decorator
+
+    def _resolve_defn(self, workflow_fn: Callable):  # type: ignore[return]
+        return self.registry.get_workflow(
+            getattr(workflow_fn, "_pgflows_name", workflow_fn.__name__)
+        )
 
     def _assert_initialized(self) -> None:
         if not self._initialized:
