@@ -1,7 +1,7 @@
 # pyflows
 
-[![PyPI](https://img.shields.io/pypi/v/pyflows)](https://pypi.org/project/pyflows/)
-[![Python](https://img.shields.io/pypi/pyversions/pyflows)](https://pypi.org/project/pyflows/)
+[![PyPI](https://img.shields.io/pypi/v/pgflows)](https://pypi.org/project/pgflows/)
+[![Python](https://img.shields.io/pypi/pyversions/pgflows)](https://pypi.org/project/pgflows/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 > Durable workflow engine SDK for Python + Postgres
@@ -27,7 +27,7 @@ Each workflow step is persisted to Postgres before execution. If the process cra
 
 ```bash
 docker compose up -d   # start Postgres with pgmq
-uv add pyflows
+uv add pgflows
 ```
 
 ```python
@@ -239,9 +239,9 @@ docker compose up -d
 ## Installation
 
 ```bash
-pip install pyflows
+pip install pgflows
 # or
-uv add pyflows
+uv add pgflows
 ```
 
 ## Development
