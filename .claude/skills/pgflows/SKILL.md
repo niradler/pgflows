@@ -44,6 +44,21 @@ async def validate_order(ctx: StepContext, inp: OrderInput) -> ValidationResult:
 await app.run_worker()   # blocking; use asyncio.create_task for background
 ```
 
+**Starting and observing a pull-mode run** — the exact signatures:
+
+```python
+iid = await app.start(process_order, OrderInput(...))  # pass the FUNCTION, not its name → str
+await app.process_once()                               # pump one poll batch (returns int handled)
+status = await app.get_status(iid)                     # → WorkflowStatus (a record, not a string)
+if status.state is WorkflowState.COMPLETED:            # WorkflowState is a str-enum, UPPERCASE
+    out = MyOutput.model_validate(status.output)       # workflow return value lands in .output
+```
+
+- `app.start(workflow_fn: Callable, input_model: BaseModel) -> str` — pass the **function object**, not the registered name (a `str` raises `AttributeError`).
+- `app.get_status(instance_id) -> WorkflowStatus` with fields `workflow_id, name, state, created_at, updated_at, error, output`. `WorkflowStatus` is the rich record; `WorkflowState` is the enum — easy to swap by mistake.
+- `WorkflowState` members are **UPPERCASE**: `PENDING, RUNNING, SUSPENDED, COMPLETED, FAILED, CANCELLED`. (This differs from `PgDurableClient.status()`, which returns *lowercase* strings — see below.)
+- **Return a `BaseModel` from the workflow fn** to populate `get_status().output`; a `-> None` workflow leaves `output` empty.
+
 **Push mode** — wire pg_durable → FastAPI → steps:
 
 ```python
@@ -124,6 +139,18 @@ instance_id = await app.pg_durable.start(node, label="audit-run")
 
 The `DslNode` renders to a SQL string via `str(node)` — pass it directly to `app.pg_durable.start()`.
 
+**Quoting with `sql_node()` — write single quotes naturally.** The builder doubles them
+for the SQL-literal layer, so `sql_node("... WHERE status = 'pending'")` is correct. Do
+**not** pre-double quotes the way the raw `pg-durable-sql` examples do (`''pending''`) — that
+double-doubles and produces a `syntax error`. The hand-doubling rule applies only to raw SQL
+strings you write *outside* the Python builders.
+
+**`http()` is a Python builder, not raw SQL** — `http(url, method="POST", body: str|None=None,
+headers: dict[str, str]|None=None, timeout_seconds=30)`. `headers` is a **dict**, not a JSON
+string (a string double-encodes and the endpoint 422s; the builder now raises `TypeError` to
+catch this). Step endpoints parse a JSON body, so include `Content-Type: application/json`:
+`http(url, body="{...}", headers={"X-DF-Instance-ID": "{sys_instance_id}", "Content-Type": "application/json"})`.
+
 ## pgmq+NOTIFY step binding (`worker_step` + `StepWorker`)
 
 A second push-mode binding alongside `df.http()`: pg_durable enqueues the step and a
@@ -146,6 +173,21 @@ runs the registered step and INSERTs the output into `pgflows.worker_step_result
 graph polls that table (race-free) instead of `df.wait_for_signal`. Select the binding
 for whole-workflow export with `app.exporter(mode="worker")` vs `mode="http"`.
 
+The bare `worker_step(...)` builder hardcodes `queue="pgflows_steps"` regardless of
+config — if you override `step_queue`/`step_notify_channel` in `PgflowsConfig` and forget
+to pass the same `queue=`/`notify_channel=` to every `worker_step`, the graph enqueues to a
+queue the `StepWorker` never drains and **the instance hangs silently, no error**. Prefer
+**`app.worker_step("name", ...)`**, which binds this app's configured queue/channel for you
+(override per-call via kwargs):
+
+```python
+node = app.worker_step("double_it", capture="d")   # uses config.step_queue + step_notify_channel
+```
+
+`worker_step`'s first step needs its input seeded: `input_expr` defaults to
+`"'{input}'::jsonb"` (the `{input}` durable var), so `await client.setvar("input", json_str)`
+before `start`, or pass a JSON literal: `input_expr="'{\"n\":4}'::jsonb"`.
+
 ## PgDurableClient
 
 Access via `app.pg_durable` (raises `RuntimeError` if extension absent — check `app.pg_durable_available` first).
@@ -163,6 +205,39 @@ if app.pg_durable_available:
     instances = await client.list_instances(status="running", limit=50)
     graph = await client.explain(instance_id)      # or pass a DSL string
     await client.grant_usage("my_role", include_http=True)
+```
+
+`client.status()` returns **lowercase** strings (`'completed'`), unlike pull-mode
+`app.get_status().state` (UPPERCASE enum). `result()` is the final node's parsed JSON.
+
+### Observing / auditing a run (execution history)
+
+pg_durable records the full per-run history in the DB. These return typed Pydantic
+models (not dicts):
+
+```python
+info  = await client.instance_info(iid)              # InstanceInfo | None
+nodes = await client.instance_nodes(iid)             # list[InstanceNode] — per-node trail
+execs = await client.instance_executions(iid)        # list[ExecutionRecord] — timing/events
+m     = await client.metrics()                       # Metrics — cluster-wide counters
+```
+
+- `instance_nodes` is the durable node trail: each node's `node_type`, `query`,
+  `result_name`, `status`, decoded `result`, `updated_at`. The graph **expands into more
+  rows than you wrote** — structural `THEN`/`JOIN`/`IF` nodes each get a row.
+- `instance_executions[*].status` is **Title-case** (`Completed`) — distinct again from
+  `status()`'s lowercase. `duration_ms`/`event_count` are populated per execution.
+- `metrics()` is cluster-wide, not per-instance.
+
+### Ad-hoc SQL around a run
+
+Creating/seeding/inspecting your own tables next to a durable graph is the archetypal
+operational pattern. Use the pooled connection accessor — never reach into internals:
+
+```python
+async with app.acquire() as conn:
+    await conn.execute("CREATE TABLE IF NOT EXISTS audit(...)")
+    rows = await conn.fetch("SELECT * FROM audit WHERE run = $1", run_id)
 ```
 
 ## SqlExporter
@@ -247,7 +322,8 @@ Plugin errors are swallowed — they never abort the step. Register before `init
 |-------|---------|-------------|
 | `dsn` | required | PostgreSQL connection string |
 | `workflow_queue` | `"pgflows_workflows"` | pgmq queue name for pull mode |
-| `step_queue` | `"pgflows_steps"` | pgmq queue name for steps |
+| `step_queue` | `"pgflows_steps"` | pgmq queue for `worker_step` dispatch |
+| `step_notify_channel` | `"pgflows_steps"` | `pg_notify` channel the `StepWorker` listens on |
 | `worker_concurrency` | `10` | Max concurrent workflows in pull mode |
 | `step_visibility_timeout_seconds` | `300` | pgmq message re-delivery timeout |
 | `otel_enabled` | `True` | Enable OpenTelemetry tracing |
@@ -302,9 +378,15 @@ Set on `@app.workflow(step_defaults=...)` or `@app.step(retry=...)`. Step-level 
     `{"rows":[…]}` envelope — so thread with `input_expr="$cap::jsonb"`, and read a
     step's final result from `result["rows"][0]["<col>"]`.
 
-11. **Parallel join works; group it before sequencing.** `&`/`|` already fully
-    parenthesize, so `d >> (a & b)` is correct. pg_durable runs the branches
-    concurrently and durably — let it; don't reimplement fan-out in Python.
+11. **Parallel join works for `worker_step` branches; group it before sequencing.** `&`/`|`
+    already fully parenthesize, so `d >> (a & b)` is correct, and a join of `worker_step`
+    branches runs concurrently and durably (the reliable pattern). **But** on the bundled
+    pg_durable build, a join (`&`/`join3`) of *trivial bare-SQL* branches
+    (`sql_node("SELECT 1") & sql_node("SELECT 2")`) can hang — branches `completed`, JOIN
+    `running` — and a loop must **not** share an instance with any parallel node (`loop ~> (a&b)`,
+    `join3 ~> loop` both deadlock via ContinueAsNew replay). Keep parallel work to
+    `worker_step` branches, and run loop-drains as a separate `df.start` instance from
+    parallel checks. See gotcha 15.
 
 12. **`worker_step` polls a result table, not `df.wait_for_signal`** — a NOTIFY-woken
     worker can signal before the waiter is registered (lost signal → hang). Run a
@@ -313,6 +395,31 @@ Set on `@app.workflow(step_defaults=...)` or `@app.step(retry=...)`. Step-level 
 
 13. **Live push-mode tests need `df` + `pgmq` in one DB.** The default compose image has
     only pgmq; build `tests/e2e/docker` for both, or use `docker-compose.full.yml`.
+
+14. **A captured `wait_for_signal` is the full envelope, not your payload.** Capturing
+    `wait_for_signal('approval') |=> 'decision'` makes `$decision` the whole
+    `{"signal_name":…, "timed_out":…, "data":{…}}` object — the data you passed to
+    `df.signal` lands under `->'data'`. Branch on
+    `($decision::jsonb->'data'->>'approved')::boolean`, and check `->>'timed_out'` first.
+    Reading `->>'approved'` at the top level is always NULL → silently takes the wrong
+    branch.
+
+15. **pg_durable composition limits (extension behavior, not pgflows) — verified live:**
+    - **`&`/`join3` of bare-SQL branches may never complete** — branches go `completed`, the
+      JOIN stays `running`. Joins of `worker_step` branches resolve reliably; prefer those.
+    - **A loop cannot share an instance with a parallel node.** `loop ~> join3`, `join3 ~> loop`,
+      and `loop ~> (a & b)` all deadlock (loop ContinueAsNew replay vs. parallel state). Split
+      the loop-drain and the parallel checks into separate `df.start` instances.
+    - **Race `|` is reliable only as a terminal node**, and does **not** cancel the loser —
+      both branches' side-effects can fire. Don't put effects in a race branch you don't want,
+      and don't sequence anything after a race (`race ~> next` hangs).
+    - **The executor wedges under accumulated hung instances.** Each wedged instance holds a
+      worker connection; once `max_duroxide_connections` (≈10) is exhausted, new instances get
+      auto-cancelled (`execution_acquire_timeout`) around execution 3. Cancel stale `running`
+      instances (`client.list_instances("running")` → `client.cancel`); a DB container restart
+      clears worker state. Inspect a stall with `await client.instance_nodes(iid)`.
+    - Confirmed working: loop/`break_`/`if_rows`/capture/`sleep`, and `wait_for_schedule`
+      (`'* * * * *'` fires within ~1 min) — chain `wait_for_schedule` from non-parallel nodes.
 
 ## Related Skill
 

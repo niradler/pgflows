@@ -29,7 +29,7 @@ from pydantic import BaseModel
 
 from pgflows.app import WorkflowApp
 from pgflows.config import PgflowsConfig
-from pgflows.dsl import http, if_node, sql_node, worker_step
+from pgflows.dsl import http, if_node, sql_node, wait_for_signal, worker_step
 from pgflows.fastapi_integration import create_pgflows_router
 
 _TEST_DSN = os.getenv(
@@ -369,3 +369,114 @@ async def test_push_http_step_roundtrip(live_app):
             await asyncio.wait_for(server_task, timeout=5)
         except (TimeoutError, asyncio.CancelledError, Exception):
             server_task.cancel()
+
+
+# --- execution-history surface (instance_info/nodes/executions/metrics) -----
+
+
+@pytest.mark.timeout(90)
+async def test_execution_history_surface(live_app):
+    client = live_app.pg_durable
+    graph = (
+        sql_node("SELECT 21 AS v").capture("v")
+        >> sql_node("SELECT 1 AS a")
+        >> sql_node("SELECT 99 AS done")
+    )
+    instance_id = await client.start(graph, label="history-run")
+    assert await _wait_status(client, instance_id, timeout=80) == "completed"
+
+    info = await client.instance_info(instance_id)
+    assert info is not None and info.status == "completed"
+
+    nodes = await client.instance_nodes(instance_id)
+    assert len(nodes) >= 3
+    assert all(n.status for n in nodes)
+    assert any(n.result_name == "v" for n in nodes)  # capture recorded in the trail
+
+    execs = await client.instance_executions(instance_id)
+    assert execs and execs[0].duration_ms is not None
+
+    metrics = await client.metrics()
+    assert metrics.total_instances >= 1 and metrics.completed_instances >= 1
+
+
+# --- app.worker_step binds the configured queue (no manual queue= needed) ----
+
+
+async def test_app_worker_step_custom_queue_roundtrip():
+    if not await _has_pg_durable():
+        pytest.skip("pg_durable not installed")
+
+    config = PgflowsConfig(
+        dsn=_TEST_DSN,
+        workflow_queue="pgflows_custom_wf",
+        step_queue="pgflows_custom_steps",
+        step_notify_channel="pgflows_custom_steps",
+        otel_enabled=False,
+        db_ssl=False,
+    )
+    app = WorkflowApp(config=config)
+
+    @app.step()
+    async def greet(ctx, inp: NameIn) -> GreetOut:
+        return GreetOut(message=f"hi {inp.name}")
+
+    await app.initialize()
+    worker = asyncio.create_task(app.run_step_worker())
+    try:
+        client = app.pg_durable
+        await client.setvar("input", json.dumps({"name": "cfg"}))
+        # app.worker_step injects the configured (non-default) queue/channel — the bare
+        # worker_step() would enqueue to 'pgflows_steps' and hang against this worker.
+        node = app.worker_step("greet", capture="r")
+        instance_id = await client.start(node, label="custom-queue")
+        assert await _wait_status(client, instance_id) == "completed"
+        result = await client.result(instance_id)
+        assert result["rows"][0]["result"] == {"message": "hi cfg"}
+    finally:
+        app._step_worker.shutdown()
+        worker.cancel()
+        try:
+            await worker
+        except (asyncio.CancelledError, Exception):
+            pass
+        await app.close()
+
+
+# --- signal-approval gate reads the envelope under ->'data' (the doc fix) ----
+
+
+@pytest.mark.timeout(60)
+async def test_signal_approval_envelope_branch(live_app):
+    import uuid
+
+    run = uuid.uuid4().hex[:12]
+    client = live_app.pg_durable
+
+    async with live_app.acquire() as conn:
+        await conn.execute(
+            "CREATE TABLE IF NOT EXISTS pgflows_approval(run text, decision text)"
+        )
+
+    decision = wait_for_signal("approval", 30).capture("decision")
+    branch = if_node(
+        sql_node(
+            "SELECT NOT ($decision::jsonb->>'timed_out')::boolean "
+            "AND coalesce(($decision::jsonb->'data'->>'approved')::boolean, false)"
+        ),
+        sql_node(f"INSERT INTO pgflows_approval VALUES ('{run}','approved')"),
+        sql_node(f"INSERT INTO pgflows_approval VALUES ('{run}','rejected')"),
+    )
+    instance_id = await client.start(decision >> branch, label="approval")
+
+    await asyncio.sleep(2)
+    assert await client.status(instance_id) == "running"  # parked on the signal
+
+    await client.signal(instance_id, "approval", {"approved": True})
+    assert await _wait_status(client, instance_id, timeout=30) == "completed"
+
+    async with live_app.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT decision FROM pgflows_approval WHERE run = $1", run
+        )
+    assert [r["decision"] for r in rows] == ["approved"]

@@ -163,6 +163,13 @@ df.metrics()
 -- Columns: total_instances, running_instances, completed_instances, failed_instances, total_executions, total_events
 ```
 
+Notes: `instance_nodes` returns **more rows than nodes you wrote** — the graph expands
+into structural `THEN`/`JOIN`/`IF` nodes that each get a row. `metrics()` is **cluster-wide**,
+not per-instance. `status` casing varies by function: `df.status()` is lowercase
+(`completed`), while `instance_executions.status` / `instance_info.status` are Title-case
+(`Completed`). From pgflows these are wrapped as typed models on `app.pg_durable`
+(`instance_info`/`instance_nodes`/`instance_executions`/`metrics`).
+
 ## Variable Substitution
 
 There are TWO separate variable systems. Do not confuse them.
@@ -280,6 +287,14 @@ SELECT df.start(
 );
 ```
 
+> **Parallelism limitations (observed on the bundled build).** A join (`&`/`join3`) of
+> *bare-SQL* branches may never finalize — children show `completed`, the JOIN stays
+> `running`. A loop must **not** share an instance with any parallel node (`loop ~> (a&b)`,
+> `join3 ~> loop` deadlock under ContinueAsNew replay) — run them as separate `df.start`
+> instances. `|` (race) is reliable only as a *terminal* node and does not cancel the loser
+> (both side-effects can fire); don't sequence after a race. Accumulated hung instances
+> exhaust the worker connection pool — cancel stale `running` instances or restart the DB.
+
 ### Race with Timeout
 
 ```sql
@@ -379,7 +394,10 @@ SELECT df.start(
     'INSERT INTO logs (msg) VALUES (''Requesting approval'')'
     ~> df.wait_for_signal('approval', 3600) |=> 'decision'
     ~> df.if(
-        'SELECT ($decision::jsonb->>''approved'')::boolean',
+        -- $decision is the full envelope {"signal_name","timed_out","data":{...}};
+        -- your df.signal payload lands under ->'data'. Check timed_out, then read data.
+        'SELECT NOT ($decision::jsonb->>''timed_out'')::boolean
+              AND coalesce(($decision::jsonb->''data''->>''approved'')::boolean, false)',
         'UPDATE orders SET status = ''approved''',
         'UPDATE orders SET status = ''rejected'''
     ),
@@ -387,7 +405,13 @@ SELECT df.start(
 );
 
 -- From another session: SELECT df.signal('inst_id', 'approval', '{"approved": true}');
+-- The {"approved": true} you pass is nested under ->'data' in the captured $decision.
 ```
+
+> **Signal envelope.** `df.wait_for_signal` returns `{"signal_name","timed_out","data":{…}}`.
+> A `|=>` capture of it is that whole object — the payload from `df.signal` is under
+> `->'data'`. Reading `$decision::jsonb->>'approved'` at the top level is always NULL
+> (falsy), so the flow silently takes the *else* branch on a real approval.
 
 ### Multi-Database Execution
 

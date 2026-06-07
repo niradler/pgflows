@@ -97,6 +97,12 @@ def http(
         raise ValueError(f"method must be one of {_VALID_HTTP_METHODS}, got {method!r}")
     if not isinstance(timeout_seconds, int):
         raise TypeError("timeout_seconds must be int")
+    if headers is not None and not isinstance(headers, dict):
+        # a JSON string double-encodes into a JSON string, not an object → endpoint 422s
+        raise TypeError(
+            "headers must be a dict[str, str], not a pre-encoded JSON string; "
+            f"got {type(headers).__name__}"
+        )
     body_arg = _q(body) if body is not None else "NULL"
     headers_arg = f"{_q(json.dumps(headers))}::jsonb" if headers is not None else "NULL"
     return DslNode(

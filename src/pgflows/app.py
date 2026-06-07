@@ -4,11 +4,13 @@ import urllib.parse
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+import asyncpg
 from pydantic import BaseModel
 
 from pgflows.backends.pg_state import PgStateBackend
 from pgflows.backends.pgmq import PgmqBackend
 from pgflows.config import PgflowsConfig
+from pgflows.dsl import DslNode, worker_step
 from pgflows.migrations import run_migrations
 from pgflows.plugins import PgflowsPlugin
 from pgflows.registry import WorkflowRegistry
@@ -188,6 +190,30 @@ class WorkflowApp:
             step_queue=self.config.step_queue,
             notify_channel=self.config.step_notify_channel,
         )
+
+    def worker_step(self, step_name: str, **kwargs: object) -> DslNode:
+        """Build a ``worker_step`` DSL node bound to THIS app's configured queue/channel.
+
+        The bare ``dsl.worker_step()`` builder defaults to the literal ``'pgflows_steps'``
+        queue regardless of config. If you override ``step_queue``/``step_notify_channel``
+        in ``PgflowsConfig`` and forget to pass them through, the DSL enqueues onto a queue
+        the StepWorker never drains and the instance hangs with no error. This helper
+        injects the configured names so the graph and the worker always agree; override
+        any of them per-call via kwargs.
+        """
+        kwargs.setdefault("queue", self.config.step_queue)
+        kwargs.setdefault("notify_channel", self.config.step_notify_channel)
+        return worker_step(step_name, **kwargs)  # type: ignore[arg-type]
+
+    def acquire(self) -> asyncpg.pool.PoolAcquireContext:
+        """Acquire a pooled connection for ad-hoc SQL around a durable run.
+
+        The archetypal operational pattern is to create/seed/inspect your own tables
+        next to a durable graph. Use as ``async with app.acquire() as conn: ...`` instead
+        of reaching into private backend internals.
+        """
+        self._assert_initialized()
+        return self._state._pool.acquire()  # type: ignore[union-attr]
 
     async def run_step_worker(self) -> None:
         """Run the queue+NOTIFY step worker loop (blocking).

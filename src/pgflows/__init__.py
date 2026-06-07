@@ -31,7 +31,13 @@ from pgflows.exceptions import (
     WorkflowNotFoundError,
 )
 from pgflows.logger import configure_default_logging, get_logger
-from pgflows.pg_durable_client import PgDurableClient
+from pgflows.pg_durable_client import (
+    ExecutionRecord,
+    InstanceInfo,
+    InstanceNode,
+    Metrics,
+    PgDurableClient,
+)
 from pgflows.plugins import LoggingPlugin, PgflowsPlugin, StepEvent, WorkflowEvent
 from pgflows.registry import WorkflowRegistry
 from pgflows.sql_exporter import DryRunResult, SqlExporter, StepSql
@@ -65,6 +71,10 @@ __all__ = [
     "wait_for_signal",
     # pg_durable runtime client
     "PgDurableClient",
+    "InstanceInfo",
+    "InstanceNode",
+    "ExecutionRecord",
+    "Metrics",
     # Context
     "WorkflowContext",
     "StepContext",

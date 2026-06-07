@@ -118,6 +118,11 @@ def test_http_custom_timeout():
     assert str(node).endswith("120)")
 
 
+def test_http_rejects_string_headers():
+    with pytest.raises(TypeError, match="headers must be a dict"):
+        http("http://example.com/step", headers='{"Content-Type": "application/json"}')
+
+
 def test_loop_infinite():
     body = DslNode("BODY")
     node = loop(body)
