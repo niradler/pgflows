@@ -189,13 +189,14 @@ def test_http_mode_requires_base_url():
 # --- pgmq mode (native SQL => pgmq => NOTIFY => signal) ---
 
 
-def test_pgmq_mode_emits_pgmq_and_signal_not_http():
+def test_pgmq_mode_emits_pgmq_and_poll_not_http():
     reg, _ = _make_exporter()
     exporter = SqlExporter(registry=reg, mode="pgmq", step_queue="pgflows_steps")
     sql = exporter.export_workflow("two_step_workflow")
     assert "pgmq.send(" in sql
     assert "pg_notify(" in sql
-    assert "df.wait_for_signal(" in sql
+    assert "df.loop(df.sleep(" in sql              # race-free poll, not a signal
+    assert "df.wait_for_signal(" not in sql
     assert "df.http(" not in sql
 
 
@@ -207,12 +208,21 @@ def test_pgmq_mode_no_base_url_needed():
     assert "df.setvar('base_url'" not in sql
 
 
-def test_pgmq_mode_unique_signal_per_step():
+def test_pgmq_mode_unique_result_key_per_step():
     reg, _ = _make_exporter()
     exporter = SqlExporter(registry=reg, mode="pgmq")
     sql = exporter.export_workflow("two_step_workflow")
-    assert "__pgflows_check_service_0" in sql
-    assert "__pgflows_notify_1" in sql
+    assert "pgflows_check_service_0" in sql
+    assert "pgflows_notify_1" in sql
+
+
+def test_pgmq_mode_threads_prev_output_to_next_input():
+    reg, _ = _make_exporter()
+    exporter = SqlExporter(registry=reg, mode="pgmq")
+    sql = exporter.export_workflow("two_step_workflow")
+    # second step's input is the first step's captured output (df substitutes
+    # $capture with the read node's first-column value = the step output).
+    assert "$pgflows_check_service_0::jsonb" in sql
 
 
 def test_pgmq_mode_dry_run_step_urls():

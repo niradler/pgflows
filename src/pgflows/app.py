@@ -68,7 +68,8 @@ class WorkflowApp:
                 else PgflowsTelemetry.noop()
             )
 
-        self._pg_durable_available = await self._state.check_extension("df")
+        # The extension is named "pg_durable" (extname); it creates the "df" schema.
+        self._pg_durable_available = await self._state.check_extension("pg_durable")
 
         if self._pg_durable_available:
             from pgflows.pg_durable_client import PgDurableClient
@@ -86,7 +87,7 @@ class WorkflowApp:
         self._step_worker = StepWorker(
             registry=self.registry,
             queue_backend=self._queue,
-            pg_durable=self._pg_durable_client,
+            pool=self._state._pool,
             telemetry=self._telemetry,
             step_queue=self.config.step_queue,
             notify_channel=self.config.step_notify_channel,
@@ -196,7 +197,7 @@ class WorkflowApp:
         back. Use asyncio.create_task to run in the background.
         """
         self._assert_initialized()
-        await self._step_worker.run(self._state._pool)  # type: ignore[union-attr]
+        await self._step_worker.run()  # type: ignore[union-attr]
 
     async def process_step_once(self) -> int:
         """Drain one batch of pgmq-dispatched steps. Useful for tests."""

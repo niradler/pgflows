@@ -15,19 +15,20 @@ if TYPE_CHECKING:
     import asyncpg
 
     from pgflows.backends.base import QueueBackend
-    from pgflows.pg_durable_client import PgDurableClient
     from pgflows.registry import WorkflowRegistry
     from pgflows.telemetry import PgflowsTelemetry
     from pgflows.types import QueueMessage
 
 
 class StepWorker:
-    """Runs pgmq-dispatched steps and signals their results back to pg_durable.
+    """Runs pgmq-dispatched steps and writes their results to the poll table.
 
     The push-mode counterpart to the HTTP step endpoint. pg_durable enqueues a
-    ``{step, instance_id, signal, input}`` message via ``pgmq.send`` and suspends on
-    ``df.wait_for_signal``. This worker drains the step queue, runs the registered
-    Python step, then ``df.signal()``s the output back to resume the durable function.
+    ``{step, instance_id, result_key, input}`` message via ``pgmq.send``, rings
+    ``pg_notify``, then polls ``results_table`` for the row. This worker drains the
+    step queue, runs the registered Python step, and INSERTs the output keyed by
+    ``result_key`` — a durable hand-off that can't lose a result to a race the way a
+    fire-and-forget ``df.signal`` can.
 
     Use ``run()`` for the LISTEN/NOTIFY loop (low latency, with a poll fallback so no
     message is missed), or ``process_batch()`` to drain once (tests, manual control).
@@ -37,20 +38,22 @@ class StepWorker:
         self,
         registry: WorkflowRegistry,
         queue_backend: QueueBackend,
-        pg_durable: PgDurableClient | None,
+        pool: asyncpg.Pool | None,
         telemetry: PgflowsTelemetry,
         step_queue: str = "pgflows_steps",
         notify_channel: str | None = None,
+        results_table: str = "pgflows.pgmq_step_results",
         batch_size: int = 10,
         poll_interval_seconds: float = 1.0,
         plugins: list[PgflowsPlugin] | None = None,
     ) -> None:
         self._registry = registry
         self._queue = queue_backend
-        self._pg_durable = pg_durable
+        self._pool = pool
         self._telemetry = telemetry
         self._step_queue = step_queue
         self._notify_channel = notify_channel or step_queue
+        self._results_table = results_table
         self._batch_size = batch_size
         self._poll_interval = poll_interval_seconds
         self._plugins = plugins or []
@@ -69,19 +72,21 @@ class StepWorker:
                 _log.error("unhandled error in step _handle_message", exc_info=r)
         return len(msgs)
 
-    async def run(self, pool: asyncpg.Pool) -> None:
+    async def run(self) -> None:
         """LISTEN on the notify channel and drain the queue on each wake-up.
 
         A poll fallback (``poll_interval_seconds``) guarantees delivery even if a
         NOTIFY is missed (e.g. the message was enqueued without a doorbell ring).
         """
+        if self._pool is None:
+            raise RuntimeError("StepWorker.run() requires a connection pool")
         self._running = True
         woke = asyncio.Event()
 
         def _on_notify(*_: Any) -> None:
             woke.set()
 
-        conn = await pool.acquire()
+        conn = await self._pool.acquire()
         try:
             await conn.add_listener(self._notify_channel, _on_notify)
             while self._running:
@@ -95,7 +100,7 @@ class StepWorker:
                 woke.clear()
         finally:
             await conn.remove_listener(self._notify_channel, _on_notify)
-            await pool.release(conn)
+            await self._pool.release(conn)
 
     def shutdown(self) -> None:
         self._running = False
@@ -104,10 +109,10 @@ class StepWorker:
         payload = msg.payload
         step_name = payload.get("step")
         instance_id = payload.get("instance_id", "pgmq-step")
-        signal_name = payload.get("signal")
+        result_key = payload.get("result_key")
         raw_input = payload.get("input") or {}
 
-        if not step_name or not signal_name:
+        if not step_name or not result_key:
             _log.error("malformed step message, archiving: %s", payload)
             await self._queue.archive(self._step_queue, msg.message_id)
             return
@@ -123,7 +128,7 @@ class StepWorker:
             input_obj = step_defn.input_type.model_validate(raw_input)
         except Exception:
             _log.exception("invalid input for step '%s', archiving message", step_name)
-            await self._signal(instance_id, signal_name, {"__error__": "invalid input"})
+            await self._write_result(result_key, {"__error__": "invalid input"})
             await self._queue.archive(self._step_queue, msg.message_id)
             return
 
@@ -146,19 +151,23 @@ class StepWorker:
             return
 
         output = result.model_dump() if isinstance(result, BaseModel) else result
-        await self._signal(instance_id, signal_name, output)
+        await self._write_result(result_key, output)
         await fire(self._plugins, "after_step", event, result)
         await self._queue.ack(self._step_queue, msg.message_id)
 
-    async def _signal(self, instance_id: str, signal_name: str, data: Any) -> None:
-        if self._pg_durable is None:
-            _log.error(
-                "cannot signal instance %s/%s: pg_durable not available",
-                instance_id,
-                signal_name,
-            )
+    async def _write_result(self, result_key: str, output: Any) -> None:
+        if self._pool is None:
+            _log.error("cannot write result for %s: no pool", result_key)
             return
-        await self._pg_durable.signal(instance_id, signal_name, data)
+        # Pass output as-is: the pool registers a jsonb codec (json.dumps), so
+        # pre-serializing here would double-encode it into a JSON string.
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                f"INSERT INTO {self._results_table} (key, result) VALUES ($1, $2) "
+                "ON CONFLICT (key) DO NOTHING",
+                result_key,
+                output,
+            )
 
 
 __all__ = ["StepWorker"]

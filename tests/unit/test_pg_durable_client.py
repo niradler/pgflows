@@ -53,6 +53,30 @@ async def test_start_returns_instance_id():
 
 
 @pytest.mark.asyncio
+async def test_start_interpolates_dsl_expression():
+    # The DSL must be interpolated (Postgres evaluates the operators), NOT bound.
+    row = MagicMock()
+    row.__getitem__ = lambda self, i: "id"
+    pool, conn = _make_pool(fetchrow_return=row)
+    client = PgDurableClient(pool)
+    await client.start(sleep(5))
+    args = conn.fetchrow.call_args[0]
+    assert "df.sleep(5)" in args[0]   # interpolated into the statement
+    assert len(args) == 1             # no bound params
+
+
+@pytest.mark.asyncio
+async def test_start_plain_str_wrapped_as_sql_node():
+    row = MagicMock()
+    row.__getitem__ = lambda self, i: "id"
+    pool, conn = _make_pool(fetchrow_return=row)
+    client = PgDurableClient(pool)
+    await client.start("SELECT 1 AS x")
+    args = conn.fetchrow.call_args[0]
+    assert "df.start('SELECT 1 AS x')" in args[0]   # quoted as a single SQL node
+
+
+@pytest.mark.asyncio
 async def test_start_with_label_builds_query():
     row = MagicMock()
     row.__getitem__ = lambda self, i: "xyz99999"
@@ -60,8 +84,9 @@ async def test_start_with_label_builds_query():
     client = PgDurableClient(pool)
     await client.start(sleep(5), label="my-label")
     args = conn.fetchrow.call_args[0]
-    assert "$2" in args[0]          # label is a bound parameter
-    assert args[2] == "my-label"    # passed as param, not interpolated
+    assert "df.sleep(5)" in args[0]   # dsl interpolated
+    assert "$1" in args[0]            # label is the only bound parameter
+    assert args[1] == "my-label"
 
 
 @pytest.mark.asyncio
@@ -72,9 +97,9 @@ async def test_start_with_label_and_database():
     client = PgDurableClient(pool)
     await client.start(sleep(1), label="lbl", database="mydb")
     args = conn.fetchrow.call_args[0]
-    assert "$2" in args[0] and "$3" in args[0]
-    assert args[2] == "lbl"
-    assert args[3] == "mydb"
+    assert "$1" in args[0] and "$2" in args[0]
+    assert args[1] == "lbl"
+    assert args[2] == "mydb"
 
 
 @pytest.mark.asyncio
@@ -86,8 +111,8 @@ async def test_start_with_database_only():
     await client.start(sleep(1), database="mydb")
     args = conn.fetchrow.call_args[0]
     assert "NULL" in args[0]        # literal NULL for missing label
-    assert "$2" in args[0]
-    assert args[2] == "mydb"
+    assert "$1" in args[0]
+    assert args[1] == "mydb"
 
 
 # ---------------------------------------------------------------------------

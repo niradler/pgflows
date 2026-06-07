@@ -98,3 +98,28 @@ Install the FastAPI optional dependency when working on push-mode features:
 ```bash
 uv sync --extra fastapi
 ```
+
+### Live push-mode e2e (pg_durable + pgmq)
+
+The default `docker compose` DB has only pgmq. The push-mode flows (`df.http`,
+pgmq+NOTIFY steps) need a Postgres that also has the `pg_durable` (`df`) extension.
+Build the combined image and point the tests at it:
+
+```bash
+docker build -t pgflows-e2e-dfpgmq:latest tests/e2e/docker
+docker compose -f tests/e2e/docker/docker-compose.yml up -d --wait
+uv run pytest tests/e2e/test_live_dfpgmq.py -v   # auto-skips if df is absent
+```
+
+The full two-container stack (DB + the example app server) lives in
+`docker-compose.full.yml` (`Dockerfile.app` + `examples/server.py`).
+
+Notes for push-mode internals:
+- `PgDurableClient.start()` **interpolates** the DSL expression into the SQL (so
+  Postgres evaluates `~>`, `|=>`, `df.http()` operators); only `label`/`database`
+  are bound params.
+- pgmq steps use a **poll-result table** (`pgflows.pgmq_step_results`), not
+  `df.wait_for_signal` — a fire-and-forget signal races the worker and is dropped if
+  it arrives before the waiter registers.
+- `df` substitutes `$capture` with the captured node's first-column value (not the
+  `{"rows":[…]}` envelope), so step output threads as `input_expr="$capture::jsonb"`.

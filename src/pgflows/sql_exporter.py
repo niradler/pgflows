@@ -120,11 +120,10 @@ class SqlExporter:
         pg_durable extension installed.
         """
         _require_safe_name(workflow_name, "workflow_name")
-        step_sqls = []
-        for index, step_name in enumerate(steps):
+        for step_name in steps:
             _require_safe_name(step_name, "step_name")
             self._registry.get_step(step_name)  # raises KeyError if unregistered
-            step_sqls.append(self._step_sql(step_name, index))
+        step_sqls = self._step_sqls(steps)
         dsl = self._build_dsl(step_sqls, workflow_name)
         return textwrap.dedent(f"""\
             -- pgflows runtime workflow: {workflow_name} (mode={self._mode})
@@ -155,31 +154,54 @@ class SqlExporter:
             f"-- run a StepWorker listening on channel '{self._notify_channel}'"
         )
 
-    def _step_sql(self, step_name: str, index: int) -> StepSql:
-        """Build the per-step DSL fragment for the configured mode."""
-        if self._mode == "http":
-            fragment = (
-                "df.http('{base_url}/steps/" + step_name + "', 'POST', "
-                "'{input}', '" + _HTTP_HEADERS + "'::jsonb)"
+    def _step_sqls(self, ordered: list[str]) -> list[StepSql]:
+        """Build per-step DSL fragments for the configured mode, in order.
+
+        In ``pgmq`` mode each step captures its result and the next step consumes it
+        (``$prev->'data'``), so the chain threads output → input like a pipeline; the
+        first step receives the ``{input}`` durable var. ``http`` mode forwards the
+        ``{input}`` durable var to every step.
+        """
+        result: list[StepSql] = []
+        for index, step_name in enumerate(ordered):
+            if self._mode == "http":
+                fragment = (
+                    "df.http('{base_url}/steps/" + step_name + "', 'POST', "
+                    "'{input}', '" + _HTTP_HEADERS + "'::jsonb)"
+                )
+                result.append(
+                    StepSql(
+                        step_name=step_name,
+                        http_url=f"{self._base_url}/steps/{step_name}",
+                        sql_fragment=fragment,
+                    )
+                )
+                continue
+            if index == 0:
+                input_expr = "'{input}'::jsonb"
+            else:
+                prev_capture = f"pgflows_{ordered[index - 1]}_{index - 1}"
+                # df substitutes $capture with the read node's first-column value,
+                # which is exactly the previous step's output.
+                input_expr = f"${prev_capture}::jsonb"
+            fragment = str(
+                pgmq_step(
+                    step_name,
+                    result_key=f"{{sys_instance_id}}:pgflows_{step_name}_{index}",
+                    queue=self._step_queue,
+                    notify_channel=self._notify_channel,
+                    input_expr=input_expr,
+                    capture=f"pgflows_{step_name}_{index}",
+                )
             )
-            return StepSql(
-                step_name=step_name,
-                http_url=f"{self._base_url}/steps/{step_name}",
-                sql_fragment=fragment,
+            result.append(
+                StepSql(
+                    step_name=step_name,
+                    http_url=f"pgmq://{self._step_queue}/{step_name}",
+                    sql_fragment=fragment,
+                )
             )
-        fragment = str(
-            pgmq_step(
-                step_name,
-                signal=f"__pgflows_{step_name}_{index}",
-                queue=self._step_queue,
-                notify_channel=self._notify_channel,
-            )
-        )
-        return StepSql(
-            step_name=step_name,
-            http_url=f"pgmq://{self._step_queue}/{step_name}",
-            sql_fragment=fragment,
-        )
+        return result
 
     def _collect_steps(self, workflow_name: str) -> list[StepSql]:
         """Introspect the workflow function via AST to find ctx.step() calls in order."""
@@ -204,7 +226,7 @@ class SqlExporter:
             names_with_line.append((node.lineno, step_name))
 
         ordered = [name for _, name in sorted(names_with_line, key=lambda x: x[0])]
-        return [self._step_sql(name, index) for index, name in enumerate(ordered)]
+        return self._step_sqls(ordered)
 
     def _build_dsl(self, steps: list[StepSql], label: str) -> str:
         if not steps:

@@ -208,28 +208,28 @@ def test_break_escapes_quotes():
 # ---------------------------------------------------------------------------
 
 
-def test_pgmq_step_emits_enqueue_notify_and_wait():
+def test_pgmq_step_emits_enqueue_notify_poll_and_read():
     sql = str(pgmq_step("charge_card"))
     assert "pgmq.send(" in sql
     assert "pg_notify(" in sql
-    assert "df.wait_for_signal(" in sql
-    # three nodes sequenced
-    assert sql.count("~>") == 2
+    assert "df.loop(df.sleep(" in sql                       # poll loop
+    assert "pgflows.pgmq_step_results" in sql               # default results table
+    assert "df.wait_for_signal(" not in sql                 # signals are racy — not used
 
 
-def test_pgmq_step_carries_step_instance_signal_and_input():
+def test_pgmq_step_carries_step_instance_resultkey_and_input():
     sql = str(pgmq_step("charge_card"))
     assert "charge_card" in sql
     assert "{sys_instance_id}" in sql
-    assert "__pgflows_charge_card" in sql  # default signal name
+    assert "result_key" in sql
     assert "{input}" in sql  # default input expression
 
 
-def test_pgmq_step_custom_signal_queue_and_channel():
+def test_pgmq_step_custom_result_key_queue_and_channel():
     sql = str(
-        pgmq_step("notify", signal="done_42", queue="my_steps", notify_channel="bell")
+        pgmq_step("notify", result_key="k42", queue="my_steps", notify_channel="bell")
     )
-    assert "done_42" in sql
+    assert "k42" in sql
     assert "my_steps" in sql
     assert "bell" in sql
 
@@ -246,6 +246,11 @@ def test_pgmq_step_quotes_doubled_for_sql_literal():
     assert "''instance_id''" in sql
 
 
+def test_pgmq_step_custom_results_table():
+    sql = str(pgmq_step("s", results_table="myschema.results"))
+    assert "myschema.results" in sql
+
+
 def test_pgmq_step_rejects_unsafe_step_name():
     with pytest.raises(ValueError, match="step_name"):
         pgmq_step("bad'; DROP TABLE--")
@@ -256,8 +261,12 @@ def test_pgmq_step_rejects_unsafe_queue():
         pgmq_step("ok", queue="bad name")
 
 
+def test_pgmq_step_rejects_unsafe_results_table():
+    with pytest.raises(ValueError, match="results_table"):
+        pgmq_step("ok", results_table="x; DROP TABLE y")
+
+
 def test_pgmq_step_composes_with_operators():
     node = pgmq_step("a") >> pgmq_step("b")
     sql = str(node)
-    assert sql.index("'a'") < sql.index("'b'") if "'a'" in sql else True
     assert sql.count("pgmq.send(") == 2

@@ -98,52 +98,65 @@ def http(
     )
 
 
+_RESULTS_TABLE = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)?$")
+
+
 def pgmq_step(
     step_name: str,
     *,
-    signal: str | None = None,
+    result_key: str | None = None,
     input_expr: str = "'{input}'::jsonb",
     queue: str = "pgflows_steps",
     notify_channel: str | None = None,
     capture: str | None = None,
-    timeout_seconds: int | None = None,
+    results_table: str = "pgflows.pgmq_step_results",
+    poll_seconds: int = 1,
 ) -> DslNode:
-    """Build a native SQL → pgmq → NOTIFY → wait-for-signal step.
+    """Build a native SQL → pgmq → NOTIFY → poll-result step.
 
-    Emits three sequenced nodes:
+    Emits a race-free request/response against a Python StepWorker:
 
-      1. ``pgmq.send`` — durably enqueues ``{step, instance_id, signal, input}``
+      1. ``pgmq.send`` — durably enqueues ``{step, instance_id, result_key, input}``
          onto ``queue`` for a StepWorker to pick up.
       2. ``pg_notify`` — rings the doorbell on ``notify_channel`` so a listening
          StepWorker wakes immediately instead of waiting for its poll tick.
-      3. ``df.wait_for_signal(signal)`` — suspends the durable function until the
-         worker finishes the Python step and calls ``df.signal()`` back.
+      3. ``df.loop(df.sleep, …)`` — polls ``results_table`` until the worker inserts
+         the result row keyed by ``result_key`` (the row persists, so the worker can
+         never "win the race" and drop the result, unlike a fire-and-forget signal).
+      4. ``SELECT result FROM results_table`` — reads the output back.
 
-    The signal payload (the step's output) lands in the captured envelope's
-    ``data`` field, i.e. ``$capture::jsonb->'data'``.
-
-    ``input_expr`` is the raw SQL expression bound to the message ``input`` field;
-    the default forwards the ``{input}`` durable variable. Pass a capture such as
-    ``"$prev::jsonb->'data'"`` to thread a previous step's output.
+    When captured, ``df`` substitutes ``$capture`` with the read node's first-column
+    value — which is exactly the step's output — so a later step can thread it as
+    ``input_expr="$capture::jsonb"``.
     """
     _require_ident(step_name, "step_name")
     _require_ident(queue, "queue")
-    sig = signal or f"__pgflows_{step_name}"
-    _require_ident(sig, "signal")
     chan = notify_channel or queue
     _require_ident(chan, "notify_channel")
     if capture is not None:
         _require_ident(capture, "capture")
+    if not _RESULTS_TABLE.fullmatch(results_table):
+        raise ValueError(
+            f"results_table must be a [schema.]table identifier; got {results_table!r}"
+        )
+    if not isinstance(poll_seconds, int):
+        raise TypeError("poll_seconds must be int")
+    key = result_key or f"{{sys_instance_id}}:{step_name}"
 
     enqueue_sql = (
         f"SELECT pgmq.send('{queue}', json_build_object("
         f"'step','{step_name}',"
         f"'instance_id','{{sys_instance_id}}',"
-        f"'signal','{sig}',"
+        f"'result_key','{key}',"
         f"'input',{input_expr})::jsonb)"
     )
     notify_sql = f"SELECT pg_notify('{chan}','{{sys_instance_id}}')"
-    node = sql_node(enqueue_sql) >> sql_node(notify_sql) >> wait_for_signal(sig, timeout_seconds)
+    poll = loop(
+        sleep(poll_seconds),
+        sql_node(f"SELECT NOT EXISTS(SELECT 1 FROM {results_table} WHERE key = '{key}')"),
+    )
+    read = sql_node(f"SELECT result FROM {results_table} WHERE key = '{key}'")
+    node = sql_node(enqueue_sql) >> sql_node(notify_sql) >> poll >> read
     if capture is not None:
         node = node.capture(capture)
     return node

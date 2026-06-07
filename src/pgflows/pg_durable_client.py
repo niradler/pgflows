@@ -29,22 +29,38 @@ class PgDurableClient:
         label: str | None = None,
         database: str | None = None,
     ) -> str:
-        """Start a durable function. Returns the 8-char instance ID."""
-        dsl = str(node)
+        """Start a durable function. Returns the 8-char instance ID.
+
+        The DSL expression is interpolated into the statement (not bound) because
+        ``~>``, ``|=>``, ``df.http()`` etc. are Postgres operators/functions that
+        Postgres must EVALUATE to build the function graph — a bound text parameter
+        would reach df as inert text and fail to parse. A plain ``str`` is treated as
+        a single raw SQL query and wrapped as a SQL node literal. ``label`` and
+        ``database`` are still bound parameters.
+        """
+        dsl = self._as_expr(node)
         async with self._pool.acquire() as conn:
             if label is not None and database is not None:
                 row = await conn.fetchrow(
-                    "SELECT df.start($1::text, $2, $3)", dsl, label, database
+                    f"SELECT df.start({dsl}, $1, $2)", label, database
                 )
             elif label is not None:
-                row = await conn.fetchrow("SELECT df.start($1::text, $2)", dsl, label)
+                row = await conn.fetchrow(f"SELECT df.start({dsl}, $1)", label)
             elif database is not None:
                 row = await conn.fetchrow(
-                    "SELECT df.start($1::text, NULL, $2)", dsl, database
+                    f"SELECT df.start({dsl}, NULL, $1)", database
                 )
             else:
-                row = await conn.fetchrow("SELECT df.start($1::text)", dsl)
+                row = await conn.fetchrow(f"SELECT df.start({dsl})")
         return row[0]
+
+    @staticmethod
+    def _as_expr(node: DslNode | str) -> str:
+        """Render node as a SQL expression. DslNode → its operator expression;
+        a plain str → a single-quoted SQL node literal."""
+        if isinstance(node, DslNode):
+            return str(node)
+        return "'" + node.replace("'", "''") + "'"
 
     async def cancel(self, instance_id: str, reason: str = "Cancelled by user") -> None:
         """Cancel a running or pending durable function instance."""
@@ -76,10 +92,17 @@ class PgDurableClient:
             row = await conn.fetchrow("SELECT df.result($1)", instance_id)
             return json.loads(row[0]) if row and row[0] else None
 
-    async def explain(self, input: str) -> str:
-        """Visualize a DSL expression or inspect a running instance."""
+    async def explain(self, input: DslNode | str) -> str:
+        """Visualize a DSL expression or inspect a running instance.
+
+        A DslNode is interpolated and evaluated (so operators build a graph); a plain
+        str is bound as a parameter (e.g. an instance ID).
+        """
         async with self._pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT df.explain($1)", input)
+            if isinstance(input, DslNode):
+                row = await conn.fetchrow(f"SELECT df.explain({input})")
+            else:
+                row = await conn.fetchrow("SELECT df.explain($1)", input)
             return row[0]
 
     async def list_instances(
