@@ -22,9 +22,8 @@ T = TypeVar("T", bound=BaseModel)
 class WorkflowContext:
     """Passed to workflow functions. Drives step execution with checkpoint replay.
 
-    On the first run, ctx.step() executes the step function and persists its
-    output. On replay (e.g. after a worker crash), it returns the cached output
-    without re-executing the function. This makes workflows idempotent.
+    On replay (e.g. after a worker crash), a completed step returns its cached
+    output without re-executing, making workflows idempotent.
     """
 
     def __init__(
@@ -34,7 +33,7 @@ class WorkflowContext:
         state_backend: PgStateBackend,
         telemetry: PyflowsTelemetry,
         step_defaults: RetryConfig | None = None,
-        plugins: list | None = None,  # accepted for backward-compat; not used here
+        plugins: list | None = None,
     ) -> None:
         self.instance_id = instance_id
         self.workflow_name = workflow_name
@@ -51,12 +50,6 @@ class WorkflowContext:
         name: str | None = None,
         retry: RetryConfig | None = None,
     ) -> Any:
-        """Execute a step with replay-based checkpointing.
-
-        If this step already completed in a prior execution, returns the
-        cached output immediately (replay). Otherwise, executes fn and
-        persists the result before returning.
-        """
         step_name = name or fn.__name__
         step_index = self._step_counter.get(step_name, 0)
         self._step_counter[step_name] = step_index + 1
@@ -79,25 +72,38 @@ class WorkflowContext:
                 try:
                     _log.debug(
                         "step execute: instance=%s step=%s[%d] attempt=%d",
-                        self.instance_id, step_name, step_index, attempt,
+                        self.instance_id,
+                        step_name,
+                        step_index,
+                        attempt,
                     )
                     ctx = StepContext(self.instance_id, step_name)
                     result = await fn(ctx, input_model)
                     output = result.model_dump() if isinstance(result, BaseModel) else result
                     await self._state.save_step_result(
-                        self.instance_id, step_name, step_index,
-                        input_model.model_dump(), output,
+                        self.instance_id,
+                        step_name,
+                        step_index,
+                        input_model.model_dump(),
+                        output,
                     )
                     return result
                 except Exception as exc:
                     last_error = exc
                     _log.warning(
                         "step failed: instance=%s step=%s attempt=%d error=%s",
-                        self.instance_id, step_name, attempt, exc,
+                        self.instance_id,
+                        step_name,
+                        attempt,
+                        exc,
                     )
                     await self._state.save_step_error(
-                        self.instance_id, step_name, step_index,
-                        input_model.model_dump(), traceback.format_exc(), attempt,
+                        self.instance_id,
+                        step_name,
+                        step_index,
+                        input_model.model_dump(),
+                        traceback.format_exc(),
+                        attempt,
                     )
                     if attempt <= retry_cfg.max_retries:
                         delay = min(

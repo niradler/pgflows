@@ -65,9 +65,8 @@ async def run_migrations(dsn: str) -> int:
     conn = await asyncpg.connect(dsn)
     try:
         await conn.execute(_BOOTSTRAP_SQL)
-        applied = {r["version"] for r in await conn.fetch(
-            "SELECT version FROM pyflows.schema_migrations"
-        )}
+        rows = await conn.fetch("SELECT version FROM pyflows.schema_migrations")
+        applied = {r["version"] for r in rows}
         count = 0
         for version, sql in MIGRATIONS:
             if version in applied:

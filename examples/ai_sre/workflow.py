@@ -14,7 +14,6 @@ import logging
 
 from pydantic import BaseModel
 
-import pyflows
 from pyflows import (
     LoggingPlugin,
     PyflowsConfig,
@@ -92,7 +91,8 @@ async def check_service_health(ctx: StepContext, input: AlertInput) -> ServiceSt
 async def diagnose_incident(ctx: StepContext, status: ServiceStatus) -> DiagnosisResult:
     """Use AI to identify root cause from metrics."""
     # In production: call an LLM with context from metrics/logs
-    logging.getLogger("sre").info("Diagnosing %s (error_rate=%.0f%%)", status.service, status.error_rate * 100)
+    pct = status.error_rate * 100
+    logging.getLogger("sre").info("Diagnosing %s (error_rate=%.0f%%)", status.service, pct)
     return DiagnosisResult(
         root_cause="Database connection pool exhausted",
         confidence=0.87,

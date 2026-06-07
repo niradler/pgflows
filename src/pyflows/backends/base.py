@@ -99,11 +99,11 @@ class SchedulerBackend(ABC):
         job_name: str,
         cron: str,
         command: str,
-    ) -> int:
-        """Register a cron job. Returns the job_id."""
+    ) -> str:
+        """Register a cron job. Returns the job_id (pg_durable instance_id)."""
 
     @abstractmethod
-    async def unschedule(self, job_id: int) -> None:
+    async def unschedule(self, job_id: str) -> None:
         """Remove a previously registered cron job."""
 
     @abstractmethod

@@ -7,7 +7,9 @@ from typing import Any
 
 from pydantic import BaseModel
 
-logger = logging.getLogger(__name__)
+from pyflows.logger import get_logger
+
+logger = get_logger("plugins")
 
 
 @dataclass(frozen=True)
@@ -54,9 +56,7 @@ class LoggingPlugin(PyflowsPlugin):
         self._level = level
 
     async def before_workflow(self, event: WorkflowEvent) -> None:
-        logger.log(
-            self._level, "workflow started: %s [%s]", event.workflow_name, event.instance_id
-        )
+        logger.log(self._level, "workflow started: %s [%s]", event.workflow_name, event.instance_id)
 
     async def after_workflow(self, event: WorkflowEvent, result: Any) -> None:
         logger.log(
@@ -64,9 +64,7 @@ class LoggingPlugin(PyflowsPlugin):
         )
 
     async def on_workflow_error(self, event: WorkflowEvent, error: Exception) -> None:
-        logger.error(
-            "workflow failed: %s [%s] — %s", event.workflow_name, event.instance_id, error
-        )
+        logger.error("workflow failed: %s [%s] — %s", event.workflow_name, event.instance_id, error)
 
     async def before_step(self, event: StepEvent, input_model: BaseModel) -> None:
         logger.log(
@@ -78,9 +76,7 @@ class LoggingPlugin(PyflowsPlugin):
         )
 
     async def after_step(self, event: StepEvent, result: Any) -> None:
-        logger.log(
-            self._level, "step completed: %s [%s]", event.step_name, event.instance_id
-        )
+        logger.log(self._level, "step completed: %s [%s]", event.step_name, event.instance_id)
 
     async def on_step_error(self, event: StepEvent, error: Exception) -> None:
         logger.warning(
@@ -98,6 +94,4 @@ async def fire(plugins: list[PyflowsPlugin], hook: str, *args: Any, **kwargs: An
         try:
             await getattr(plugin, hook)(*args, **kwargs)
         except Exception:
-            logger.warning(
-                "plugin %s.%s raised", type(plugin).__name__, hook, exc_info=True
-            )
+            logger.warning("plugin %s.%s raised", type(plugin).__name__, hook, exc_info=True)

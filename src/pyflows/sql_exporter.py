@@ -91,13 +91,18 @@ class SqlExporter:
                 continue
             fn_node = call.args[0]
             step_name = fn_node.id if isinstance(fn_node, ast.Name) else "unknown"
-            http_url = f"{self._base_url}/steps/{step_name}"
-            # Use pg_durable template var syntax for base_url substitution
+            # {{base_url}} is pg_durable template var syntax, substituted at import time.
             fragment = (
                 f"df.http('{{{{base_url}}}}/steps/{step_name}', "
                 f"'POST', '{{\"step\": \"{step_name}\"}}')"
             )
-            steps.append(StepSql(step_name=step_name, http_url=http_url, sql_fragment=fragment))
+            steps.append(
+                StepSql(
+                    step_name=step_name,
+                    http_url=f"{self._base_url}/steps/{step_name}",
+                    sql_fragment=fragment,
+                )
+            )
         return steps
 
     def _build_dsl(self, steps: list[StepSql], label: str) -> str:

@@ -47,9 +47,7 @@ class PyflowsTelemetry:
 
     @contextmanager
     def workflow_span(self, workflow_name: str, instance_id: str) -> Generator[Span]:
-        with self._tracer.start_as_current_span(
-            f"pyflows.workflow.{workflow_name}"
-        ) as span:
+        with self._tracer.start_as_current_span(f"pyflows.workflow.{workflow_name}") as span:
             span.set_attribute("pyflows.workflow.name", workflow_name)
             span.set_attribute("pyflows.workflow.id", instance_id)
             try:
@@ -59,12 +57,8 @@ class PyflowsTelemetry:
                 raise
 
     @contextmanager
-    def step_span(
-        self, instance_id: str, step_name: str, step_index: int
-    ) -> Generator[Span]:
-        with self._tracer.start_as_current_span(
-            f"pyflows.step.{step_name}"
-        ) as span:
+    def step_span(self, instance_id: str, step_name: str, step_index: int) -> Generator[Span]:
+        with self._tracer.start_as_current_span(f"pyflows.step.{step_name}") as span:
             span.set_attribute("pyflows.workflow.id", instance_id)
             span.set_attribute("pyflows.step.name", step_name)
             span.set_attribute("pyflows.step.index", step_index)

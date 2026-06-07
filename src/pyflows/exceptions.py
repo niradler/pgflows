@@ -31,6 +31,6 @@ class BackendNotInitializedError(PyflowsError):
 
 
 class SchedulerJobNotFoundError(PyflowsError):
-    def __init__(self, job_id: int) -> None:
+    def __init__(self, job_id: str) -> None:
         super().__init__(f"Scheduled job not found: {job_id}")
         self.job_id = job_id

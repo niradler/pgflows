@@ -35,7 +35,7 @@ class QueueMessage(BaseModel):
 
 
 class ScheduledJob(BaseModel):
-    job_id: int
+    job_id: str
     job_name: str
     cron: str
     command: str

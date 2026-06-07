@@ -4,15 +4,18 @@ import asyncio
 import traceback
 from typing import TYPE_CHECKING
 
+from pydantic import BaseModel
+
 from pyflows.context import WorkflowContext
 from pyflows.plugins import PyflowsPlugin, WorkflowEvent, fire
-from pyflows.telemetry import PyflowsTelemetry
 from pyflows.types import WorkflowState
 
 if TYPE_CHECKING:
     from pyflows.backends.base import QueueBackend
     from pyflows.backends.pg_state import PgStateBackend
     from pyflows.registry import WorkflowRegistry
+    from pyflows.telemetry import PyflowsTelemetry
+    from pyflows.types import QueueMessage
 
 
 class WorkflowWorker:
@@ -56,7 +59,7 @@ class WorkflowWorker:
     def shutdown(self) -> None:
         self._running = False
 
-    async def _handle_message(self, msg) -> None:
+    async def _handle_message(self, msg: QueueMessage) -> None:
         payload = msg.payload
         workflow_name = payload["workflow_name"]
         instance_id = payload["instance_id"]
@@ -84,7 +87,7 @@ class WorkflowWorker:
                     plugins=self._plugins,
                 )
                 result = await defn.fn(ctx, input_model)
-                output = result.model_dump() if hasattr(result, "model_dump") else result
+                output = result.model_dump() if isinstance(result, BaseModel) else result
                 await self._state.update_instance_state(
                     instance_id, WorkflowState.COMPLETED, output=output
                 )

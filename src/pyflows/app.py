@@ -121,6 +121,7 @@ class WorkflowApp:
         def decorator(fn: Callable) -> Callable:
             self.registry.register_workflow(fn, name=name, step_defaults=step_defaults)
             return fn
+
         return decorator
 
     def register_plugin(self, plugin: PyflowsPlugin) -> None:
@@ -136,6 +137,7 @@ class WorkflowApp:
         def decorator(fn: Callable) -> Callable:
             self.registry.register_step(fn, name=name, retry=retry, timeout_seconds=timeout_seconds)
             return fn
+
         return decorator
 
     def _assert_initialized(self) -> None:
