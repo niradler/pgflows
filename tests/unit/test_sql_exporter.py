@@ -238,3 +238,51 @@ def test_worker_mode_compose():
     sql = exporter.compose("runtime_wf", ["check_service", "notify"])
     assert "pgmq.send(" in sql
     assert sql.index("check_service") < sql.index("notify")
+
+
+# --- branching workflow detection ---
+
+
+def test_export_workflow_raises_for_if_branch():
+    """export_workflow() must raise for workflows with ctx.step() inside if blocks."""
+
+    async def branching_workflow(ctx, input: CheckInput) -> CheckOutput:
+        if input.url:
+            result = await ctx.step(check_service, input)
+        else:
+            result = await ctx.step(notify, NotifyInput(message="fallback"))
+        return result
+
+    reg = WorkflowRegistry()
+    reg.register_step(check_service)
+    reg.register_step(notify)
+    reg.register_workflow(branching_workflow)
+    exporter = SqlExporter(registry=reg, base_url="http://localhost:8000")
+
+    with pytest.raises(ValueError, match="If"):
+        exporter.export_workflow("branching_workflow")
+
+
+def test_export_workflow_raises_for_loop():
+    """export_workflow() must raise for workflows with ctx.step() inside for loops."""
+
+    async def looping_workflow(ctx, input: CheckInput) -> CheckOutput:
+        for _ in range(3):
+            await ctx.step(check_service, input)
+        return CheckOutput(healthy=True)
+
+    reg = WorkflowRegistry()
+    reg.register_step(check_service)
+    reg.register_workflow(looping_workflow)
+    exporter = SqlExporter(registry=reg, base_url="http://localhost:8000")
+
+    with pytest.raises(ValueError, match="For"):
+        exporter.export_workflow("looping_workflow")
+
+
+def test_export_workflow_linear_still_works():
+    """Linear workflows without branching must continue to work as before."""
+    _, exporter = _make_exporter()
+    sql = exporter.export_workflow("two_step_workflow")
+    assert "check_service" in sql
+    assert "notify" in sql

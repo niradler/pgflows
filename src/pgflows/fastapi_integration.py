@@ -134,7 +134,9 @@ def create_pgflows_router(
         }
 
     @router.get("/workflows", summary="List workflow instances")
-    async def list_workflows(limit: int = Query(default=100, ge=1, le=1000)) -> list[dict[str, Any]]:
+    async def list_workflows(
+        limit: int = Query(default=100, ge=1, le=1000),
+    ) -> list[dict[str, Any]]:
         instances = await app.list_workflows(limit=limit)
         return [i.model_dump() for i in instances]
 

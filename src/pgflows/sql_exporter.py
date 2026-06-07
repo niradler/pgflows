@@ -11,6 +11,20 @@ from pgflows.dsl import worker_step
 from pgflows.registry import WorkflowRegistry
 
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9_]+$")
+_BRANCH_NODES = (ast.If, ast.For, ast.While, ast.AsyncFor)
+
+
+def _contains_step_call(node: ast.AST) -> bool:
+    for child in ast.walk(node):
+        if isinstance(child, ast.Await):
+            call = child.value
+            if (
+                isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Attribute)
+                and call.func.attr == "step"
+            ):
+                return True
+    return False
 
 ExportMode = Literal["http", "worker"]
 
@@ -206,10 +220,23 @@ class SqlExporter:
         return result
 
     def _collect_steps(self, workflow_name: str) -> list[StepSql]:
-        """Introspect the workflow function via AST to find ctx.step() calls in order."""
+        """Introspect the workflow function via AST to find ctx.step() calls in order.
+
+        Raises ValueError when ctx.step() calls appear inside if/for/while blocks —
+        those cannot be statically ordered. Use compose() with an explicit list instead.
+        """
         defn = self._registry.get_workflow(workflow_name)
         source = textwrap.dedent(inspect.getsource(defn.fn))
         tree = ast.parse(source)
+
+        for node in ast.walk(tree):
+            if isinstance(node, _BRANCH_NODES) and _contains_step_call(node):
+                ctrl = type(node).__name__
+                raise ValueError(
+                    f"export_workflow('{workflow_name}'): ctx.step() inside a {ctrl} block "
+                    f"cannot be statically ordered. Use exporter.compose(['step1', 'step2']) "
+                    f"with an explicit step list, or build the DSL directly."
+                )
 
         names_with_line: list[tuple[int, str]] = []
         for node in ast.walk(tree):
