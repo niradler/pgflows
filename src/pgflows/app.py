@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import urllib.parse
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -51,13 +50,8 @@ class WorkflowApp:
         for name in self.registry.list_workflows():
             await self._state.register_workflow(name, config={})
 
-        parsed = urllib.parse.urlparse(self.config.dsn)
         self._queue = PgmqBackend(
-            host=parsed.hostname or "localhost",
-            port=str(parsed.port or 5432),
-            database=(parsed.path or "/postgres").lstrip("/"),
-            username=parsed.username or "postgres",
-            password=parsed.password or "postgres",
+            pool=self._state._pool,  # type: ignore[arg-type]  # non-None post-initialize
             visibility_timeout_seconds=self.config.step_visibility_timeout_seconds,
         )
         await self._queue.initialize()
