@@ -199,3 +199,52 @@ async def test_default_registered_retry_does_not_override_workflow_default():
         await ctx.step(always_fails, NumberInput(value=0))
 
     assert state.save_step_error.call_count == 1
+
+
+async def test_step_timeout_raises_step_execution_error():
+    """A step that exceeds its registered timeout must raise StepExecutionError."""
+    import asyncio
+
+    async def slow_step(ctx, input: NumberInput) -> NumberOutput:
+        await asyncio.sleep(10)  # much longer than timeout
+        return NumberOutput(result=0)
+
+    registry = WorkflowRegistry()
+    registry.register_step(slow_step, timeout_seconds=0.05, retry=RetryConfig(max_retries=0))
+    state = make_state(cached=None)
+    ctx = make_ctx(state, step_defaults=RetryConfig(max_retries=0), registry=registry)
+
+    with pytest.raises(StepExecutionError):
+        await ctx.step(slow_step, NumberInput(value=0))
+
+
+async def test_step_no_timeout_runs_normally():
+    """A step with no timeout registered runs without restriction."""
+    registry = WorkflowRegistry()
+    registry.register_step(double_step)  # no timeout_seconds
+    state = make_state(cached=None)
+    ctx = make_ctx(state, registry=registry)
+
+    result = await ctx.step(double_step, NumberInput(value=7))
+    assert result.result == 14
+
+
+async def test_step_timeout_respected_per_registered_config():
+    """timeout_seconds on the step decorator is what is enforced."""
+    import asyncio
+
+    call_count = {"n": 0}
+
+    async def barely_fast(ctx, input: NumberInput) -> NumberOutput:
+        call_count["n"] += 1
+        await asyncio.sleep(0.001)  # well within 1s timeout
+        return NumberOutput(result=input.value)
+
+    registry = WorkflowRegistry()
+    registry.register_step(barely_fast, timeout_seconds=1.0, retry=RetryConfig(max_retries=0))
+    state = make_state(cached=None)
+    ctx = make_ctx(state, registry=registry)
+
+    result = await ctx.step(barely_fast, NumberInput(value=5))
+    assert result.result == 5
+    assert call_count["n"] == 1

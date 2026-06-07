@@ -61,3 +61,33 @@ async def test_step_fails_after_max_retries(pgflows_config):
         assert status.state == WorkflowState.FAILED
     finally:
         await app.close()
+
+
+@pytest.mark.asyncio
+async def test_step_timeout_marks_workflow_failed(pgflows_config):
+    """A step that exceeds its timeout_seconds must fail and mark the workflow FAILED."""
+    import asyncio
+
+    app = WorkflowApp(config=pgflows_config)
+
+    @app.step(
+        timeout_seconds=0.1,
+        retry=RetryConfig(max_retries=0),
+    )
+    async def slow_step(ctx, input: NumInput) -> NumOutput:
+        await asyncio.sleep(10)
+        return NumOutput(result=0)
+
+    @app.workflow()
+    async def timeout_workflow(ctx, input: NumInput) -> NumOutput:
+        return await ctx.step(slow_step, input)
+
+    await app.initialize()
+    try:
+        instance_id = await app.start(timeout_workflow, NumInput(value=1))
+        await app.process_once()
+        status = await app.get_status(instance_id)
+        assert status.state == WorkflowState.FAILED
+        assert status.error is not None
+    finally:
+        await app.close()

@@ -21,24 +21,43 @@ class PgflowsTelemetry:
 
     TRACER_NAME = "pgflows"
 
-    def __init__(self, tracer: trace.Tracer) -> None:
+    def __init__(self, tracer: trace.Tracer, provider: TracerProvider | None = None) -> None:
         self._tracer = tracer
+        self._provider = provider
 
     @classmethod
     def with_provider(cls, provider: TracerProvider) -> PgflowsTelemetry:
-        return cls(provider.get_tracer(cls.TRACER_NAME))
+        return cls(provider.get_tracer(cls.TRACER_NAME), provider=provider)
 
     @classmethod
     def with_in_memory_exporter(cls, exporter: InMemorySpanExporter) -> PgflowsTelemetry:
         provider = TracerProvider()
         provider.add_span_processor(SimpleSpanProcessor(exporter))
-        return cls(provider.get_tracer(cls.TRACER_NAME))
+        return cls(provider.get_tracer(cls.TRACER_NAME), provider=provider)
 
     @classmethod
     def from_env(cls, service_name: str = "pgflows") -> PgflowsTelemetry:
-        """Create a real provider. Configure exporters via OTel env vars."""
-        provider = TracerProvider()
-        return cls(provider.get_tracer(cls.TRACER_NAME))
+        """Create a TracerProvider, exporting via OTLP when the endpoint is configured.
+
+        Set OTEL_EXPORTER_OTLP_ENDPOINT to enable export:
+            OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+
+        When the env var is absent, returns a no-op provider (spans created but not
+        exported). Use PgflowsConfig(otel_enabled=False) to skip tracing entirely.
+        """
+        import os
+
+        if not os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
+            return cls.noop()
+
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+        from opentelemetry.sdk.resources import SERVICE_NAME, Resource
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+        resource = Resource({SERVICE_NAME: service_name})
+        provider = TracerProvider(resource=resource)
+        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+        return cls(provider.get_tracer(cls.TRACER_NAME), provider=provider)
 
     @classmethod
     def noop(cls) -> PgflowsTelemetry:

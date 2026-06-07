@@ -1,4 +1,6 @@
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from pydantic import BaseModel
 
@@ -81,3 +83,40 @@ def test_app_workflow_decorator_preserves_name():
 
     assert "custom_name" in app.registry.list_workflows()
     assert "some_fn" not in app.registry.list_workflows()
+
+
+async def test_initialize_passes_visibility_timeout_to_pgmq_backend():
+    """PgmqBackend must receive the configured VT, not its own hardcoded default."""
+    config = PgflowsConfig(
+        dsn="postgresql://user:pass@localhost/db",
+        step_visibility_timeout_seconds=120,
+    )
+    app = WorkflowApp(config=config)
+
+    captured: dict = {}
+
+    class _FakeBackend:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        async def initialize(self):
+            pass
+
+        async def _ensure_queue(self, q):
+            pass
+
+    with (
+        patch("pgflows.app.run_migrations", new=AsyncMock()),
+        patch("pgflows.app.PgStateBackend") as mock_state_cls,
+        patch("pgflows.app.PgmqBackend", new=_FakeBackend),
+    ):
+        mock_state = AsyncMock()
+        mock_state.list_workflows = MagicMock(return_value=[])
+        mock_state.register_workflow = AsyncMock()
+        mock_state.check_extension = AsyncMock(return_value=False)
+        mock_state._pool = MagicMock()
+        mock_state_cls.return_value = mock_state
+
+        await app.initialize()
+
+    assert captured.get("visibility_timeout_seconds") == 120
