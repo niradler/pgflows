@@ -3,17 +3,19 @@ from __future__ import annotations
 import asyncio
 import traceback
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, get_type_hints
 
 from pydantic import BaseModel
 
 from pyflows.exceptions import StepExecutionError
 from pyflows.logger import get_logger
+from pyflows.plugins import PyflowsPlugin, StepEvent, fire
 from pyflows.telemetry import PyflowsTelemetry
 from pyflows.types import RetryConfig
 
 if TYPE_CHECKING:
     from pyflows.backends.pg_state import PgStateBackend
+    from pyflows.registry import WorkflowRegistry
 
 _log = get_logger("context")
 T = TypeVar("T", bound=BaseModel)
@@ -33,7 +35,8 @@ class WorkflowContext:
         state_backend: PgStateBackend,
         telemetry: PyflowsTelemetry,
         step_defaults: RetryConfig | None = None,
-        plugins: list | None = None,
+        plugins: list[PyflowsPlugin] | None = None,
+        registry: WorkflowRegistry | None = None,
     ) -> None:
         self.instance_id = instance_id
         self.workflow_name = workflow_name
@@ -41,6 +44,8 @@ class WorkflowContext:
         self._telemetry = telemetry
         self._step_defaults = step_defaults or RetryConfig()
         self._step_counter: dict[str, int] = {}
+        self._plugins = plugins or []
+        self._registry = registry
 
     async def step(
         self,
@@ -59,16 +64,27 @@ class WorkflowContext:
             _log.debug(
                 "step replay: instance=%s step=%s[%d]", self.instance_id, step_name, step_index
             )
-            return_hint = fn.__annotations__.get("return")
+            try:
+                hints = get_type_hints(fn)
+            except Exception:
+                hints = {}
+            return_hint = hints.get("return")
             if return_hint and isinstance(return_hint, type) and issubclass(return_hint, BaseModel):
                 return return_hint.model_validate(cached)
             return cached
 
-        retry_cfg = retry or self._step_defaults
+        retry_cfg = retry or self._get_registered_retry(fn) or self._step_defaults
         last_error: Exception | None = None
 
         with self._telemetry.step_span(self.instance_id, step_name, step_index):
             for attempt in range(1, retry_cfg.max_retries + 2):
+                event = StepEvent(
+                    instance_id=self.instance_id,
+                    workflow_name=self.workflow_name,
+                    step_name=step_name,
+                    step_index=step_index,
+                    attempt=attempt,
+                )
                 try:
                     _log.debug(
                         "step execute: instance=%s step=%s[%d] attempt=%d",
@@ -77,6 +93,7 @@ class WorkflowContext:
                         step_index,
                         attempt,
                     )
+                    await fire(self._plugins, "before_step", event, input_model)
                     ctx = StepContext(self.instance_id, step_name)
                     result = await fn(ctx, input_model)
                     output = result.model_dump() if isinstance(result, BaseModel) else result
@@ -87,6 +104,7 @@ class WorkflowContext:
                         input_model.model_dump(),
                         output,
                     )
+                    await fire(self._plugins, "after_step", event, result)
                     return result
                 except Exception as exc:
                     last_error = exc
@@ -105,14 +123,22 @@ class WorkflowContext:
                         traceback.format_exc(),
                         attempt,
                     )
+                    await fire(self._plugins, "on_step_error", event, exc)
                     if attempt <= retry_cfg.max_retries:
                         delay = min(
                             retry_cfg.initial_delay_seconds * (2 ** (attempt - 1)),
                             retry_cfg.max_delay_seconds,
                         )
                         await asyncio.sleep(delay)
+            raise StepExecutionError(step_name, last_error)  # type: ignore[arg-type]
 
-        raise StepExecutionError(step_name, last_error)  # type: ignore[arg-type]
+    def _get_registered_retry(self, fn: Callable) -> RetryConfig | None:
+        if self._registry is None:
+            return None
+        step_defn = self._registry.get_step_by_function(fn)
+        if step_defn is None or not step_defn.retry_overridden:
+            return None
+        return step_defn.retry
 
 
 class StepContext:

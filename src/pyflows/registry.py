@@ -15,6 +15,7 @@ class StepDefinition:
     input_type: type
     output_type: type
     retry: RetryConfig = field(default_factory=RetryConfig)
+    retry_overridden: bool = False
     timeout_seconds: float | None = None
 
 
@@ -56,6 +57,7 @@ class WorkflowRegistry:
             input_type=input_type,
             output_type=output_type,
             retry=retry or RetryConfig(),
+            retry_overridden=retry is not None,
             timeout_seconds=timeout_seconds,
         )
         self._steps[step_name] = defn
@@ -83,6 +85,12 @@ class WorkflowRegistry:
         if name not in self._steps:
             raise KeyError(f"Step '{name}' not registered")
         return self._steps[name]
+
+    def get_step_by_function(self, fn: Callable) -> StepDefinition | None:
+        for defn in self._steps.values():
+            if defn.fn is fn:
+                return defn
+        return None
 
     def get_workflow(self, name: str) -> WorkflowDefinition:
         if name not in self._workflows:

@@ -7,8 +7,11 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 
 from pyflows.context import WorkflowContext
+from pyflows.logger import get_logger
 from pyflows.plugins import PyflowsPlugin, WorkflowEvent, fire
 from pyflows.types import WorkflowState
+
+_log = get_logger("worker")
 
 if TYPE_CHECKING:
     from pyflows.backends.base import QueueBackend
@@ -45,7 +48,12 @@ class WorkflowWorker:
         msgs = await self._queue.dequeue(self._queue_name, batch_size=self._batch_size)
         if not msgs:
             return 0
-        await asyncio.gather(*[self._handle_message(m) for m in msgs], return_exceptions=True)
+        results = await asyncio.gather(
+            *[self._handle_message(m) for m in msgs], return_exceptions=True
+        )
+        for r in results:
+            if isinstance(r, BaseException):
+                _log.error("unhandled error in _handle_message", exc_info=r)
         return len(msgs)
 
     async def run(self) -> None:
@@ -85,18 +93,27 @@ class WorkflowWorker:
                     telemetry=self._telemetry,
                     step_defaults=defn.step_defaults,
                     plugins=self._plugins,
+                    registry=self._registry,
                 )
                 result = await defn.fn(ctx, input_model)
-                output = result.model_dump() if isinstance(result, BaseModel) else result
-                await self._state.update_instance_state(
-                    instance_id, WorkflowState.COMPLETED, output=output
-                )
-                await fire(self._plugins, "after_workflow", wf_event, result)
-                await self._queue.ack(self._queue_name, msg.message_id)
             except Exception as exc:
                 error = traceback.format_exc()
                 await self._state.update_instance_state(
                     instance_id, WorkflowState.FAILED, error=error
                 )
                 await fire(self._plugins, "on_workflow_error", wf_event, exc)
+                await self._queue.nack(self._queue_name, msg.message_id)
+                return
+
+            try:
+                output = result.model_dump() if isinstance(result, BaseModel) else result
+                await self._state.update_instance_state(
+                    instance_id, WorkflowState.COMPLETED, output=output
+                )
+                await fire(self._plugins, "after_workflow", wf_event, result)
+                await self._queue.ack(self._queue_name, msg.message_id)
+            except Exception:
+                _log.exception(
+                    "failed to finalize completed workflow %s; nacking for redelivery", instance_id
+                )
                 await self._queue.nack(self._queue_name, msg.message_id)

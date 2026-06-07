@@ -120,3 +120,38 @@ Deps: `pydantic`, `psycopg[binary]`, `tembo-pgmq-python` (all latest, no pins)
 - Observability dashboard (post-M8)
 - Multi-tenant / RLS (pg_durable has this built-in via df.grant_usage(), surface in SDK)
 - Push mode (df.http) implementation strategy — plugin or core? (leaning plugin, M5/M6)
+
+## Evidence review — 2026-06-07
+
+Scope: review current implementation against the tracker goal: Python + Postgres durable workflow SDK with typed decorators, replay checkpoints, pgmq worker execution, plugin lifecycle hooks, OTel, SQL export, and runnable examples.
+
+### Critical issues fixed
+
+1. Step plugin hooks were declared and wired into `WorkflowWorker`, but never executed by `WorkflowContext`.
+   - Evidence: `plugins.py` defines `before_step`, `after_step`, and `on_step_error`; `worker.py` passed `plugins=self._plugins` into `WorkflowContext`; `context.py` accepted `plugins` but did not store or call them.
+   - Impact: M6 plugin lifecycle was marked complete, but `LoggingPlugin` and custom plugins never saw step events during real workflow execution.
+   - Fix: `WorkflowContext` now stores plugins and fires step hooks around each real execution attempt. Replay from cached results still skips hooks because no step runs.
+   - Proof: focused offline tests passed: `uv run pytest tests/unit/test_context_replay.py tests/unit/test_registry.py tests/unit/test_worker.py tests/unit/test_plugins.py -q` → 30 passed.
+
+2. Decorated step retry config was stored but ignored at runtime.
+   - Evidence: `WorkflowRegistry.register_step()` captured `retry`, and examples/e2e use `@app.step(retry=...)`; `WorkflowContext.step()` only used explicit call retry or workflow defaults and had no registry access.
+   - Impact: `@app.step(retry=RetryConfig(...))` did not control execution unless callers duplicated `retry=` in every `ctx.step()` call.
+   - Fix: `WorkflowWorker` passes the registry into `WorkflowContext`; `WorkflowContext` resolves retry precedence as explicit `ctx.step(..., retry=...)`, then explicitly configured step decorator retry, then workflow defaults.
+   - Proof: regression tests cover explicit step retry and ensure default registered retry does not override workflow defaults; focused offline tests passed.
+
+### Non-critical findings to track
+
+1. Some real Postgres/pgmq tests are located under `tests/unit`.
+   - Evidence: `tests/unit/test_pg_state.py` and `tests/unit/test_pgmq.py` open real connections to `localhost:5433`.
+   - Impact: useful coverage, but these are integration tests, not offline unit tests. This can make `uv run pytest tests/unit/` depend on Docker/Postgres state.
+   - Recommendation: later move them under `tests/integration/` or `tests/e2e/`, or mark them clearly with skip behavior when DB is unavailable.
+
+2. `RetryConfig.backoff` accepts any string.
+   - Evidence: `types.py` has `backoff: str = "exponential"` while README review docs expect constrained values.
+   - Impact: typoed values are accepted silently. Current runtime does not branch on `backoff`, so this is API polish until linear/exponential behavior is implemented.
+   - Recommendation: change to an enum or `Literal["exponential", "linear"]` when implementing actual backoff modes.
+
+3. `PgmqBackend.listen()` is an async generator while the ABC uses `def listen(...) -> AsyncIterator[None]`.
+   - Evidence: `base.py` declares a regular method returning `AsyncIterator`; `pgmq.py` implements `async def listen(...)` with `# type: ignore[override]`.
+   - Impact: not currently used by `WorkflowWorker`, which polls with `dequeue`, but the interface is inconsistent.
+   - Recommendation: decide whether `listen` should be an async generator factory or an async method and make the ABC and backend match.
