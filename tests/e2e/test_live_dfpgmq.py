@@ -29,7 +29,7 @@ from pydantic import BaseModel
 
 from pgflows.app import WorkflowApp
 from pgflows.config import PgflowsConfig
-from pgflows.dsl import http, if_node, pgmq_step, sql_node
+from pgflows.dsl import http, if_node, sql_node, worker_step
 from pgflows.fastapi_integration import create_pgflows_router
 
 _TEST_DSN = os.getenv(
@@ -81,7 +81,7 @@ async def live_app():
     if not await _has_pg_durable():
         pytest.skip("pg_durable not installed — run tests/e2e/docker compose image")
 
-    # Use the default step queue/channel so they match pgmq_step()'s defaults.
+    # Use the default step queue/channel so they match worker_step()'s defaults.
     config = PgflowsConfig(
         dsn=_TEST_DSN,
         workflow_queue="pgflows_live_wf",
@@ -175,12 +175,12 @@ async def test_pull_mode_workflow_completes(live_app):
 # --- pgmq + NOTIFY binding (the new feature) --------------------------------
 
 
-async def test_pgmq_step_single_roundtrip(live_app):
+async def test_worker_step_single_roundtrip(live_app):
     client = live_app.pg_durable
     worker = asyncio.create_task(live_app.run_step_worker())
     try:
         await client.setvar("input", json.dumps({"name": "ada"}))
-        node = pgmq_step("greet", capture="r")
+        node = worker_step("greet", capture="r")
         instance_id = await client.start(node, label="pgmq-greet")
         assert await _wait_status(client, instance_id) == "completed"
         result = await client.result(instance_id)
@@ -195,12 +195,14 @@ async def test_pgmq_step_single_roundtrip(live_app):
             pass
 
 
-async def test_pgmq_step_threads_output_to_next_input(live_app):
+async def test_worker_step_threads_output_to_next_input(live_app):
     client = live_app.pg_durable
     worker = asyncio.create_task(live_app.run_step_worker())
     try:
         await client.setvar("input", json.dumps({"n": 4}))
-        node = pgmq_step("double_it", result_key="{sys_instance_id}:s1", capture="r1") >> pgmq_step(
+        node = worker_step(
+            "double_it", result_key="{sys_instance_id}:s1", capture="r1"
+        ) >> worker_step(
             "add_ten",
             result_key="{sys_instance_id}:s2",
             input_expr="$r1::jsonb",
@@ -220,11 +222,11 @@ async def test_pgmq_step_threads_output_to_next_input(live_app):
             pass
 
 
-async def test_pgmq_exporter_sql_is_valid_df(live_app):
+async def test_worker_exporter_sql_is_valid_df(live_app):
     client = live_app.pg_durable
     worker = asyncio.create_task(live_app.run_step_worker())
     try:
-        exporter = live_app.exporter(mode="pgmq")
+        exporter = live_app.exporter(mode="worker")
         sql = exporter.compose("exp_greet", ["greet"])
         await client.setvar("input", json.dumps({"name": "exp"}))
         # The pgmq-mode preamble is comment-only, so the exported text is a single
@@ -287,11 +289,11 @@ async def test_complex_workflow_parallel_branch_threading(live_app):
                 f"VALUES ('{run}','{label}',{value_sql})"
             )
 
-        d = pgmq_step("double_it", result_key="{sys_instance_id}:d", capture="d")
-        a = pgmq_step(
+        d = worker_step("double_it", result_key="{sys_instance_id}:d", capture="d")
+        a = worker_step(
             "add_ten", input_expr="$d::jsonb", result_key="{sys_instance_id}:a", capture="a"
         )
-        h = pgmq_step(
+        h = worker_step(
             "add_hundred", input_expr="$d::jsonb", result_key="{sys_instance_id}:h", capture="h"
         )
         audit_ten = sql_node(_audit("ten", "$a::jsonb"))

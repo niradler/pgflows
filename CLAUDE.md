@@ -46,7 +46,7 @@ Every infrastructure concern lives behind an ABC in `backends/base.py`. The rest
 | `backends/pg_durable.py` | pg_durable extension backend |
 | `telemetry.py` | OTel span management |
 | `sql_exporter.py` | pg_durable DSL generation (selectable `http` / `pgmq` step bindings) |
-| `dsl.py` | Python DSL builders for pg_durable operators (incl. `pgmq_step`) |
+| `dsl.py` | Python DSL builders for pg_durable operators (incl. `worker_step`) |
 | `fastapi_integration.py` | FastAPI router for push-mode endpoints |
 | `migrations.py` | Automatic schema migration on `initialize()` |
 | `pg_durable_client.py` | High-level client for pg_durable operations |
@@ -129,7 +129,7 @@ Notes for push-mode internals (learned by running real workflows on `df`):
   durable var set, `df` serializes the vars snapshot with non-deterministic key order
   and a JOIN replay then fails as "nondeterministic: schedule mismatch". Keep one
   config var (e.g. `input`) and pass everything else via captures.
-- pgmq steps use a **poll-result table** (`pgflows.pgmq_step_results`) rather than
+- pgmq steps use a **poll-result table** (`pgflows.worker_step_results`) rather than
   `df.wait_for_signal`: a NOTIFY-woken worker can signal before `df` registers the
   waiter, and that signal is dropped. The poll table is race-free (the row persists);
   `wait_for_signal` remains the right primitive for genuinely external events.

@@ -51,7 +51,7 @@ def _worker(registry: WorkflowRegistry, queue: AsyncMock, pool) -> StepWorker:
         pool=pool,
         telemetry=PgflowsTelemetry.noop(),
         step_queue="pgflows_steps",
-        results_table="pgflows.pgmq_step_results",
+        results_table="pgflows.worker_step_results",
     )
 
 
@@ -70,7 +70,7 @@ async def test_runs_step_writes_result_and_acks():
     assert count == 1
     # result written to the poll table keyed by result_key
     args = conn.execute.await_args[0]
-    assert "INSERT INTO pgflows.pgmq_step_results" in args[0]
+    assert "INSERT INTO pgflows.worker_step_results" in args[0]
     assert args[1] == "k1"
     assert args[2] == {"y": 6}   # raw dict — pool's jsonb codec serializes it
     queue.ack.assert_awaited_once_with("pgflows_steps", "1")

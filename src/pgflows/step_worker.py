@@ -42,7 +42,7 @@ class StepWorker:
         telemetry: PgflowsTelemetry,
         step_queue: str = "pgflows_steps",
         notify_channel: str | None = None,
-        results_table: str = "pgflows.pgmq_step_results",
+        results_table: str = "pgflows.worker_step_results",
         batch_size: int = 10,
         poll_interval_seconds: float = 1.0,
         plugins: list[PgflowsPlugin] | None = None,

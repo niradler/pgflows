@@ -467,3 +467,56 @@ SELECT df.start('SELECT 1', database => 'other_db');
    -- Use df.status() or df.wait_for_completion() to check progress
    SELECT df.start('long running query');  -- Returns instantly
    ```
+
+## Hard-won gotchas (verified against a live pg_durable + pgmq)
+
+Subtle, cost real debugging time, confirmed by running real workflows — not guesses.
+
+1. **The DSL must be EVALUATED by Postgres, never passed as a bound parameter.**
+   `~>`, `|=>`, `&`, `|`, `?>`, `df.http()` are SQL-level operators/functions: Postgres
+   evaluates them to build the graph TEXT, then `df.start` runs it.
+
+   ```python
+   # WRONG (e.g. asyncpg): operators never evaluated → df gets inert text → fails
+   await conn.fetchrow("SELECT df.start($1)", "'A' ~> 'B'")
+   # CORRECT: interpolate the DSL into the statement; bind only label/database
+   await conn.fetchrow(f"SELECT df.start({dsl}, $1)", label)   # dsl = "'A' ~> 'B'"
+   ```
+   A bare SQL string still needs quotes: `df.start('SELECT 1')`, not `df.start(SELECT 1)`.
+
+2. **`$capture` expands to the captured node's FIRST-COLUMN VALUE, not the envelope.**
+   `df.result`/`instance_nodes` show `{"rows":[{"col":<v>}],"row_count":1}`, but inside
+   a later node `$capture` is just `<v>`.
+
+   ```sql
+   'SELECT json_build_object(''val'',8) AS result' |=> 'r'
+   -- $r IS {"val":8} (the column value), NOT {"rows":[{"result":{"val":8}}]}
+   ~> 'SELECT ($r::jsonb->>''val'')::int'
+   ```
+
+3. **`~>` binds tighter than `&` / `|`.** `d ~> a & b` parses as `(d ~> a) & b`, so the
+   right branch never sees `d`'s captures. Group the whole parallel block:
+   `d ~> ((a) & (b))` — wrap the entire `&` expression, not just each operand.
+
+4. **Thread data with captures, not many `df.setvar`s.** With MORE THAN ONE durable
+   var set, pg_durable serializes the vars snapshot with non-deterministic key order; a
+   **parallel-join replay** then dies with
+   `error="nondeterministic: schedule mismatch"`. Keep one config var and pass step
+   data through `|=>` captures. (Parallel join works perfectly with ≤1 var — it is the
+   orchestrator's job and it handles concurrency + durability correctly.)
+
+5. **Signals are dropped if sent before the waiter is registered.** `df.signal(id,'s')`
+   only resumes an instance that has already reached `df.wait_for_signal('s')`. A worker
+   woken by a `pg_notify` emitted just before the wait node usually signals too early →
+   lost → instance hangs. For worker callbacks, poll a result table instead (row
+   persists, race-free): `... ~> df.loop(df.sleep(1), 'SELECT NOT EXISTS(SELECT 1 FROM
+   results WHERE key=...)') ~> 'SELECT result FROM results WHERE key=...'`. Reserve
+   `wait_for_signal` for genuinely external events (approvals/webhooks) reached first.
+
+6. **Extension name vs schema name.** The extension is `pg_durable`
+   (`SELECT 1 FROM pg_extension WHERE extname='pg_durable'`); it only creates the `df`
+   schema. Detecting with `extname='df'` is always false.
+
+7. **Deploying alongside pgmq.** `pg_durable` is a pgrx/Rust extension (build from
+   source; needs `shared_preload_libraries='pg_durable'`). `pgmq` 1.5.x is pure SQL — its
+   extension files can be copied straight into a `pg_durable` PG17 image, no recompile.

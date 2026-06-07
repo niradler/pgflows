@@ -107,7 +107,7 @@ def http(
 _RESULTS_TABLE = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)?$")
 
 
-def pgmq_step(
+def worker_step(
     step_name: str,
     *,
     result_key: str | None = None,
@@ -115,7 +115,7 @@ def pgmq_step(
     queue: str = "pgflows_steps",
     notify_channel: str | None = None,
     capture: str | None = None,
-    results_table: str = "pgflows.pgmq_step_results",
+    results_table: str = "pgflows.worker_step_results",
     poll_seconds: int = 1,
 ) -> DslNode:
     """Build a native SQL → pgmq → NOTIFY → poll-result step.
@@ -205,7 +205,7 @@ __all__ = [
     "if_rows",
     "join3",
     "loop",
-    "pgmq_step",
+    "worker_step",
     "sleep",
     "sql_node",
     "wait_for_schedule",

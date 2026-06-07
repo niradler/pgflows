@@ -185,22 +185,22 @@ to your Python steps. There are two selectable bindings for that call-out:
 ```python
 # Pull both bindings off the app (registry + queue config wired for you)
 http_sql = app.exporter(base_url="https://api.example.com/pgflows", mode="http").export_workflow("process_order")
-pgmq_sql = app.exporter(mode="pgmq").export_workflow("process_order")
+worker_sql = app.exporter(mode="worker").export_workflow("process_order")
 
 # The pgmq binding needs a step worker draining the queue + signalling results back:
 await app.run_step_worker()          # blocking; use asyncio.create_task for background
 ```
 
-Compose graphs directly with the Python DSL builders — `pgmq_step()` is a native
+Compose graphs directly with the Python DSL builders — `worker_step()` is a native
 `pgmq.send → pg_notify → poll-result → read` unit that composes with the operators:
 
 ```python
-from pgflows import pgmq_step
+from pgflows import worker_step
 
 # double_it, then add_ten consuming its output, threaded via a result capture
 node = (
-    pgmq_step("double_it", capture="d")
-    >> pgmq_step("add_ten", input_expr="$d::jsonb", capture="r")
+    worker_step("double_it", capture="d")
+    >> worker_step("add_ten", input_expr="$d::jsonb", capture="r")
 )
 instance_id = await app.pg_durable.start(node, label="pipeline")
 ```

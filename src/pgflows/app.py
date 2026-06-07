@@ -178,7 +178,7 @@ class WorkflowApp:
         """Build a SqlExporter wired to this app's registry and queue config.
 
         ``mode='http'`` emits df.http() push-mode SQL (requires base_url).
-        ``mode='pgmq'`` emits native pgmq.send + pg_notify + wait_for_signal SQL,
+        ``mode='worker'`` emits native enqueue + pg_notify + poll-result SQL,
         picked up by the step worker (``run_step_worker``).
         """
         return SqlExporter(
@@ -190,11 +190,11 @@ class WorkflowApp:
         )
 
     async def run_step_worker(self) -> None:
-        """Run the pgmq+NOTIFY step worker loop (blocking).
+        """Run the queue+NOTIFY step worker loop (blocking).
 
-        Picks up steps dispatched by pg_durable via ``pgmq.send`` (see SqlExporter
-        ``mode='pgmq'`` / ``pgmq_step``), runs the Python step, and signals the result
-        back. Use asyncio.create_task to run in the background.
+        Picks up steps dispatched by pg_durable (see SqlExporter ``mode='worker'`` /
+        ``worker_step``), runs the Python step, and writes the result to the poll
+        table pg_durable reads. Use asyncio.create_task to run in the background.
         """
         self._assert_initialized()
         await self._step_worker.run()  # type: ignore[union-attr]

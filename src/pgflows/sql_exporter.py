@@ -7,12 +7,12 @@ import textwrap
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from pgflows.dsl import pgmq_step
+from pgflows.dsl import worker_step
 from pgflows.registry import WorkflowRegistry
 
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9_]+$")
 
-ExportMode = Literal["http", "pgmq"]
+ExportMode = Literal["http", "worker"]
 
 # Carries the pg_durable instance ID into the step endpoint for telemetry correlation,
 # and forwards the {input} durable variable as the request body so steps receive data.
@@ -48,7 +48,7 @@ class SqlExporter:
 
     - ``"http"`` (default) — each step becomes a ``df.http()`` call to the push-mode
       FastAPI step endpoint. pg_durable makes an outbound request per step.
-    - ``"pgmq"`` — each step becomes a native ``pgmq.send`` + ``pg_notify`` +
+    - ``"worker"`` — each step becomes a native ``pgmq.send`` + ``pg_notify`` +
       ``df.wait_for_signal`` chain. pg_durable enqueues the step and suspends; a
       ``StepWorker`` runs the Python function and signals the result back. No inbound
       HTTP server required.
@@ -185,7 +185,7 @@ class SqlExporter:
                 # which is exactly the previous step's output.
                 input_expr = f"${prev_capture}::jsonb"
             fragment = str(
-                pgmq_step(
+                worker_step(
                     step_name,
                     result_key=f"{{sys_instance_id}}:pgflows_{step_name}_{index}",
                     queue=self._step_queue,
@@ -197,7 +197,7 @@ class SqlExporter:
             result.append(
                 StepSql(
                     step_name=step_name,
-                    http_url=f"pgmq://{self._step_queue}/{step_name}",
+                    http_url=f"worker://{self._step_queue}/{step_name}",
                     sql_fragment=fragment,
                 )
             )

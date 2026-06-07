@@ -186,12 +186,12 @@ def test_http_mode_requires_base_url():
         SqlExporter(registry=reg, mode="http")
 
 
-# --- pgmq mode (native SQL => pgmq => NOTIFY => signal) ---
+# --- worker mode (native enqueue => NOTIFY => poll-result) ---
 
 
-def test_pgmq_mode_emits_pgmq_and_poll_not_http():
+def test_worker_mode_emits_pgmq_and_poll_not_http():
     reg, _ = _make_exporter()
-    exporter = SqlExporter(registry=reg, mode="pgmq", step_queue="pgflows_steps")
+    exporter = SqlExporter(registry=reg, mode="worker", step_queue="pgflows_steps")
     sql = exporter.export_workflow("two_step_workflow")
     assert "pgmq.send(" in sql
     assert "pg_notify(" in sql
@@ -200,41 +200,41 @@ def test_pgmq_mode_emits_pgmq_and_poll_not_http():
     assert "df.http(" not in sql
 
 
-def test_pgmq_mode_no_base_url_needed():
+def test_worker_mode_no_base_url_needed():
     reg, _ = _make_exporter()
-    exporter = SqlExporter(registry=reg, mode="pgmq")
+    exporter = SqlExporter(registry=reg, mode="worker")
     sql = exporter.export_workflow("two_step_workflow")
     assert "df.start(" in sql
     assert "df.setvar('base_url'" not in sql
 
 
-def test_pgmq_mode_unique_result_key_per_step():
+def test_worker_mode_unique_result_key_per_step():
     reg, _ = _make_exporter()
-    exporter = SqlExporter(registry=reg, mode="pgmq")
+    exporter = SqlExporter(registry=reg, mode="worker")
     sql = exporter.export_workflow("two_step_workflow")
     assert "pgflows_check_service_0" in sql
     assert "pgflows_notify_1" in sql
 
 
-def test_pgmq_mode_threads_prev_output_to_next_input():
+def test_worker_mode_threads_prev_output_to_next_input():
     reg, _ = _make_exporter()
-    exporter = SqlExporter(registry=reg, mode="pgmq")
+    exporter = SqlExporter(registry=reg, mode="worker")
     sql = exporter.export_workflow("two_step_workflow")
     # second step's input is the first step's captured output (df substitutes
     # $capture with the read node's first-column value = the step output).
     assert "$pgflows_check_service_0::jsonb" in sql
 
 
-def test_pgmq_mode_dry_run_step_urls():
+def test_worker_mode_dry_run_step_urls():
     reg, _ = _make_exporter()
-    exporter = SqlExporter(registry=reg, mode="pgmq", step_queue="pgflows_steps")
+    exporter = SqlExporter(registry=reg, mode="worker", step_queue="pgflows_steps")
     result = exporter.dry_run("two_step_workflow")
-    assert result.steps[0].http_url == "pgmq://pgflows_steps/check_service"
+    assert result.steps[0].http_url == "worker://pgflows_steps/check_service"
 
 
-def test_pgmq_mode_compose():
+def test_worker_mode_compose():
     reg, _ = _make_exporter()
-    exporter = SqlExporter(registry=reg, mode="pgmq")
+    exporter = SqlExporter(registry=reg, mode="worker")
     sql = exporter.compose("runtime_wf", ["check_service", "notify"])
     assert "pgmq.send(" in sql
     assert sql.index("check_service") < sql.index("notify")

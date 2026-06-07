@@ -16,11 +16,11 @@ from pgflows.dsl import (
     if_rows,
     join3,
     loop,
-    pgmq_step,
     sleep,
     sql_node,
     wait_for_schedule,
     wait_for_signal,
+    worker_step,
 )
 from pgflows.exceptions import (
     BackendNotInitializedError,
@@ -58,7 +58,7 @@ __all__ = [
     "if_rows",
     "join3",
     "loop",
-    "pgmq_step",
+    "worker_step",
     "sleep",
     "sql_node",
     "wait_for_schedule",

@@ -57,12 +57,12 @@ MIGRATIONS: list[tuple[str, str]] = [
         """,
     ),
     (
-        "0003_pgmq_step_results",
+        "0003_worker_step_results",
         """
         -- Drop box for pgmq+NOTIFY step results. pg_durable polls this table
         -- (race-free) instead of relying on a signal that can be sent before the
         -- waiter is registered. The StepWorker inserts a row keyed by result_key.
-        CREATE TABLE IF NOT EXISTS pgflows.pgmq_step_results (
+        CREATE TABLE IF NOT EXISTS pgflows.worker_step_results (
             key         TEXT PRIMARY KEY,
             result      JSONB NOT NULL,
             created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()

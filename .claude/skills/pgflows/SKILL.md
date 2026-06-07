@@ -111,6 +111,7 @@ from pgflows import if_node, if_rows, join3, break_, DslNode
 | `if_node(cond, t, e)` | `cond ?> t !> e` | Conditional (standalone) |
 | `if_rows("x", t, e)` | `df.if_rows('x', t, e)` | Branch on captured rows |
 | `break_()` | `df.break()` | Exit loop |
+| `worker_step("s")` | `pgmq.send ~> pg_notify ~> df.loop(poll) ~> read` | Run Python step via pgmq+NOTIFY |
 
 ```python
 # Example: parallel fan-out then sequence
@@ -122,6 +123,28 @@ instance_id = await app.pg_durable.start(node, label="audit-run")
 ```
 
 The `DslNode` renders to a SQL string via `str(node)` — pass it directly to `app.pg_durable.start()`.
+
+## pgmq+NOTIFY step binding (`worker_step` + `StepWorker`)
+
+A second push-mode binding alongside `df.http()`: pg_durable enqueues the step and a
+Python `StepWorker` runs it — no inbound HTTP server needed.
+
+```python
+from pgflows import worker_step
+
+# double_it then add_ten consuming its output, threaded via a capture
+node = (
+    worker_step("double_it", capture="d")
+    >> worker_step("add_ten", input_expr="$d::jsonb", capture="r")
+)
+worker = asyncio.create_task(app.run_step_worker())   # drains queue, writes results
+iid = await app.pg_durable.start(node, label="pipeline")
+```
+
+`worker_step` emits `pgmq.send → pg_notify → df.loop(poll) → SELECT result`. The worker
+runs the registered step and INSERTs the output into `pgflows.worker_step_results`; the
+graph polls that table (race-free) instead of `df.wait_for_signal`. Select the binding
+for whole-workflow export with `app.exporter(mode="worker")` vs `mode="http"`.
 
 ## PgDurableClient
 
@@ -262,6 +285,34 @@ Set on `@app.workflow(step_defaults=...)` or `@app.step(retry=...)`. Step-level 
 6. **`SqlExporter` step discovery requires direct function references** — `await ctx.step(validate_order, inp)` is detected; `await ctx.step(lookup_fn(name), inp)` is not.
 
 7. **Forgetting `await app.close()`** — connection pools stay open; always close in teardown or use as async context.
+
+## Push-mode gotchas (verified against a live pg_durable + pgmq)
+
+8. **`PgDurableClient.start()`/`explain()` interpolate the DSL, never bind it.** The DSL
+   operators are SQL-level and Postgres must evaluate them; a bound `$1` text param
+   reaches `df` as inert text and fails. (The client already does this — don't "fix" it
+   to a bound param.)
+
+9. **Thread step data with captures, not multiple `setvar`s.** With >1 durable var set,
+   pg_durable serializes the vars snapshot non-deterministically and a parallel join
+   then fails replay (`nondeterministic: schedule mismatch`). Keep one config var (e.g.
+   `base_url`) and pass data via `|=>` captures / `worker_step(input_expr="$cap::jsonb")`.
+
+10. **`$capture` is the captured node's first-column value**, not the
+    `{"rows":[…]}` envelope — so thread with `input_expr="$cap::jsonb"`, and read a
+    step's final result from `result["rows"][0]["<col>"]`.
+
+11. **Parallel join works; group it before sequencing.** `&`/`|` already fully
+    parenthesize, so `d >> (a & b)` is correct. pg_durable runs the branches
+    concurrently and durably — let it; don't reimplement fan-out in Python.
+
+12. **`worker_step` polls a result table, not `df.wait_for_signal`** — a NOTIFY-woken
+    worker can signal before the waiter is registered (lost signal → hang). Run a
+    `StepWorker` (`app.run_step_worker()`); it writes results to
+    `pgflows.worker_step_results` and the graph polls (race-free).
+
+13. **Live push-mode tests need `df` + `pgmq` in one DB.** The default compose image has
+    only pgmq; build `tests/e2e/docker` for both, or use `docker-compose.full.yml`.
 
 ## Related Skill
 
