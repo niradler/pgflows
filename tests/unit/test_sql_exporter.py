@@ -160,3 +160,71 @@ def test_compose_rejects_unsafe_step_name():
     exporter = SqlExporter(registry=reg, base_url="http://localhost:8000")
     with pytest.raises(ValueError, match="step_name"):
         exporter.compose("my_wf", ["safe_step'; DROP TABLE--"])
+
+
+# --- HTTP binding correctness (fixed) ---
+
+
+def test_http_fragment_includes_instance_id_header():
+    _, exporter = _make_exporter()
+    sql = exporter.export_workflow("two_step_workflow")
+    assert "X-DF-Instance-ID" in sql
+    assert "{sys_instance_id}" in sql
+
+
+def test_http_fragment_forwards_input_body():
+    _, exporter = _make_exporter()
+    sql = exporter.export_workflow("two_step_workflow")
+    # Body forwards the {input} durable var, not the old dummy {"step": ...} payload.
+    assert "'{input}'" in sql
+    assert '{"step":' not in sql
+
+
+def test_http_mode_requires_base_url():
+    reg = WorkflowRegistry()
+    with pytest.raises(ValueError, match="base_url"):
+        SqlExporter(registry=reg, mode="http")
+
+
+# --- pgmq mode (native SQL => pgmq => NOTIFY => signal) ---
+
+
+def test_pgmq_mode_emits_pgmq_and_signal_not_http():
+    reg, _ = _make_exporter()
+    exporter = SqlExporter(registry=reg, mode="pgmq", step_queue="pgflows_steps")
+    sql = exporter.export_workflow("two_step_workflow")
+    assert "pgmq.send(" in sql
+    assert "pg_notify(" in sql
+    assert "df.wait_for_signal(" in sql
+    assert "df.http(" not in sql
+
+
+def test_pgmq_mode_no_base_url_needed():
+    reg, _ = _make_exporter()
+    exporter = SqlExporter(registry=reg, mode="pgmq")
+    sql = exporter.export_workflow("two_step_workflow")
+    assert "df.start(" in sql
+    assert "df.setvar('base_url'" not in sql
+
+
+def test_pgmq_mode_unique_signal_per_step():
+    reg, _ = _make_exporter()
+    exporter = SqlExporter(registry=reg, mode="pgmq")
+    sql = exporter.export_workflow("two_step_workflow")
+    assert "__pgflows_check_service_0" in sql
+    assert "__pgflows_notify_1" in sql
+
+
+def test_pgmq_mode_dry_run_step_urls():
+    reg, _ = _make_exporter()
+    exporter = SqlExporter(registry=reg, mode="pgmq", step_queue="pgflows_steps")
+    result = exporter.dry_run("two_step_workflow")
+    assert result.steps[0].http_url == "pgmq://pgflows_steps/check_service"
+
+
+def test_pgmq_mode_compose():
+    reg, _ = _make_exporter()
+    exporter = SqlExporter(registry=reg, mode="pgmq")
+    sql = exporter.compose("runtime_wf", ["check_service", "notify"])
+    assert "pgmq.send(" in sql
+    assert sql.index("check_service") < sql.index("notify")

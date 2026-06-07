@@ -12,6 +12,8 @@ from pgflows.config import PgflowsConfig
 from pgflows.migrations import run_migrations
 from pgflows.plugins import PgflowsPlugin
 from pgflows.registry import WorkflowRegistry
+from pgflows.sql_exporter import SqlExporter
+from pgflows.step_worker import StepWorker
 from pgflows.telemetry import PgflowsTelemetry
 from pgflows.types import RetryConfig, WorkflowState, WorkflowStatus
 from pgflows.worker import WorkflowWorker
@@ -32,6 +34,7 @@ class WorkflowApp:
         self._state: PgStateBackend | None = None
         self._queue: PgmqBackend | None = None
         self._worker: WorkflowWorker | None = None
+        self._step_worker: StepWorker | None = None
         self._initialized = False
         self._pg_durable_available: bool = False
         self._pg_durable_client: PgDurableClient | None = None
@@ -56,6 +59,7 @@ class WorkflowApp:
         )
         await self._queue.initialize()
         await self._queue._ensure_queue(self.config.workflow_queue)
+        await self._queue._ensure_queue(self.config.step_queue)
 
         if self._telemetry is None:
             self._telemetry = (
@@ -77,6 +81,15 @@ class WorkflowApp:
             queue_backend=self._queue,
             telemetry=self._telemetry,
             queue_name=self.config.workflow_queue,
+            plugins=self._plugins,
+        )
+        self._step_worker = StepWorker(
+            registry=self.registry,
+            queue_backend=self._queue,
+            pg_durable=self._pg_durable_client,
+            telemetry=self._telemetry,
+            step_queue=self.config.step_queue,
+            notify_channel=self.config.step_notify_channel,
             plugins=self._plugins,
         )
         self._initialized = True
@@ -155,9 +168,46 @@ class WorkflowApp:
         self._assert_initialized()
         return await self._worker.process_batch()  # type: ignore[union-attr]
 
+    def exporter(
+        self,
+        base_url: str | None = None,
+        *,
+        mode: str = "http",
+    ) -> SqlExporter:
+        """Build a SqlExporter wired to this app's registry and queue config.
+
+        ``mode='http'`` emits df.http() push-mode SQL (requires base_url).
+        ``mode='pgmq'`` emits native pgmq.send + pg_notify + wait_for_signal SQL,
+        picked up by the step worker (``run_step_worker``).
+        """
+        return SqlExporter(
+            self.registry,
+            base_url,
+            mode=mode,  # type: ignore[arg-type]
+            step_queue=self.config.step_queue,
+            notify_channel=self.config.step_notify_channel,
+        )
+
+    async def run_step_worker(self) -> None:
+        """Run the pgmq+NOTIFY step worker loop (blocking).
+
+        Picks up steps dispatched by pg_durable via ``pgmq.send`` (see SqlExporter
+        ``mode='pgmq'`` / ``pgmq_step``), runs the Python step, and signals the result
+        back. Use asyncio.create_task to run in the background.
+        """
+        self._assert_initialized()
+        await self._step_worker.run(self._state._pool)  # type: ignore[union-attr]
+
+    async def process_step_once(self) -> int:
+        """Drain one batch of pgmq-dispatched steps. Useful for tests."""
+        self._assert_initialized()
+        return await self._step_worker.process_batch()  # type: ignore[union-attr]
+
     async def close(self) -> None:
         if self._worker:
             self._worker.shutdown()
+        if self._step_worker:
+            self._step_worker.shutdown()
         if self._state:
             await self._state.close()
         if self._queue:

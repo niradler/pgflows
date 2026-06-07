@@ -1,13 +1,22 @@
 from __future__ import annotations
 
 import json
+import re
 
 _VALID_HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
+_SAFE_IDENT = re.compile(r"^[A-Za-z0-9_]+$")
 
 
 def _q(s: str) -> str:
     """Escape a string for safe embedding in a PostgreSQL single-quoted literal."""
     return "'" + s.replace("'", "''") + "'"
+
+
+def _require_ident(value: str, label: str) -> None:
+    if not _SAFE_IDENT.fullmatch(value):
+        raise ValueError(
+            f"{label} must contain only letters, digits, and underscores; got {value!r}"
+        )
 
 
 class DslNode:
@@ -89,6 +98,57 @@ def http(
     )
 
 
+def pgmq_step(
+    step_name: str,
+    *,
+    signal: str | None = None,
+    input_expr: str = "'{input}'::jsonb",
+    queue: str = "pgflows_steps",
+    notify_channel: str | None = None,
+    capture: str | None = None,
+    timeout_seconds: int | None = None,
+) -> DslNode:
+    """Build a native SQL → pgmq → NOTIFY → wait-for-signal step.
+
+    Emits three sequenced nodes:
+
+      1. ``pgmq.send`` — durably enqueues ``{step, instance_id, signal, input}``
+         onto ``queue`` for a StepWorker to pick up.
+      2. ``pg_notify`` — rings the doorbell on ``notify_channel`` so a listening
+         StepWorker wakes immediately instead of waiting for its poll tick.
+      3. ``df.wait_for_signal(signal)`` — suspends the durable function until the
+         worker finishes the Python step and calls ``df.signal()`` back.
+
+    The signal payload (the step's output) lands in the captured envelope's
+    ``data`` field, i.e. ``$capture::jsonb->'data'``.
+
+    ``input_expr`` is the raw SQL expression bound to the message ``input`` field;
+    the default forwards the ``{input}`` durable variable. Pass a capture such as
+    ``"$prev::jsonb->'data'"`` to thread a previous step's output.
+    """
+    _require_ident(step_name, "step_name")
+    _require_ident(queue, "queue")
+    sig = signal or f"__pgflows_{step_name}"
+    _require_ident(sig, "signal")
+    chan = notify_channel or queue
+    _require_ident(chan, "notify_channel")
+    if capture is not None:
+        _require_ident(capture, "capture")
+
+    enqueue_sql = (
+        f"SELECT pgmq.send('{queue}', json_build_object("
+        f"'step','{step_name}',"
+        f"'instance_id','{{sys_instance_id}}',"
+        f"'signal','{sig}',"
+        f"'input',{input_expr})::jsonb)"
+    )
+    notify_sql = f"SELECT pg_notify('{chan}','{{sys_instance_id}}')"
+    node = sql_node(enqueue_sql) >> sql_node(notify_sql) >> wait_for_signal(sig, timeout_seconds)
+    if capture is not None:
+        node = node.capture(capture)
+    return node
+
+
 def loop(body: DslNode, condition: DslNode | None = None) -> DslNode:
     """Infinite loop (@>) or while-loop (df.loop with condition)."""
     if condition is None:
@@ -126,6 +186,7 @@ __all__ = [
     "if_rows",
     "join3",
     "loop",
+    "pgmq_step",
     "sleep",
     "sql_node",
     "wait_for_schedule",

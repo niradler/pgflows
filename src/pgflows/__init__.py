@@ -16,6 +16,7 @@ from pgflows.dsl import (
     if_rows,
     join3,
     loop,
+    pgmq_step,
     sleep,
     sql_node,
     wait_for_schedule,
@@ -34,6 +35,7 @@ from pgflows.pg_durable_client import PgDurableClient
 from pgflows.plugins import LoggingPlugin, PgflowsPlugin, StepEvent, WorkflowEvent
 from pgflows.registry import WorkflowRegistry
 from pgflows.sql_exporter import DryRunResult, SqlExporter, StepSql
+from pgflows.step_worker import StepWorker
 from pgflows.telemetry import PgflowsTelemetry
 from pgflows.types import (
     QueueMessage,
@@ -56,6 +58,7 @@ __all__ = [
     "if_rows",
     "join3",
     "loop",
+    "pgmq_step",
     "sleep",
     "sql_node",
     "wait_for_schedule",
@@ -72,6 +75,7 @@ __all__ = [
     "PgflowsTelemetry",
     # Worker
     "WorkflowWorker",
+    "StepWorker",
     # SQL exporter
     "SqlExporter",
     "DryRunResult",

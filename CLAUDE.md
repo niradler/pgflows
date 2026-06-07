@@ -38,14 +38,15 @@ Every infrastructure concern lives behind an ABC in `backends/base.py`. The rest
 | --- | --- |
 | `app.py` | Wiring only — assembles backends, registry, worker |
 | `context.py` | Step execution + replay logic |
-| `worker.py` | Queue polling + dispatch loop |
+| `worker.py` | Workflow queue polling + dispatch loop |
+| `step_worker.py` | pgmq+NOTIFY step consumer — runs Python steps, signals results to pg_durable |
 | `registry.py` | Decorator registration + type extraction |
 | `backends/` | All I/O (DB, queue, scheduler) |
 | `backends/base.py` | ABCs for all backends |
 | `backends/pg_durable.py` | pg_durable extension backend |
 | `telemetry.py` | OTel span management |
-| `sql_exporter.py` | pg_durable DSL generation |
-| `dsl.py` | Python DSL builders for pg_durable operators |
+| `sql_exporter.py` | pg_durable DSL generation (selectable `http` / `pgmq` step bindings) |
+| `dsl.py` | Python DSL builders for pg_durable operators (incl. `pgmq_step`) |
 | `fastapi_integration.py` | FastAPI router for push-mode endpoints |
 | `migrations.py` | Automatic schema migration on `initialize()` |
 | `pg_durable_client.py` | High-level client for pg_durable operations |
