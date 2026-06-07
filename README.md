@@ -286,8 +286,8 @@ See [`examples/ai_sre/workflow.py`](examples/ai_sre/workflow.py) for a full inci
 - [x] M6 — Plugin system: `PgflowsPlugin` ABC, `LoggingPlugin`, lifecycle hooks
 - [x] M7 — Migrations + scheduler: versioned schema migrations, `PgCronBackend` via pg_durable
 - [x] M8 — AI SRE example, README, production hardening: DLQ, worker coordination, linear backoff, pg_durable detection
+- [x] M9 — PyPI release (`pgflows` on PyPI, Docker images on GHCR + Docker Hub)
 - [ ] M5 — FastAPI integration: push endpoint (deferred; pull mode works without it)
-- [ ] M9 — PyPI release + full documentation
 
 ## License
 
