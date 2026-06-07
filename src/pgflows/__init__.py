@@ -20,6 +20,7 @@ from pgflows.dsl import (
     sql_node,
     wait_for_schedule,
     wait_for_signal,
+    worker_step,
 )
 from pgflows.exceptions import (
     BackendNotInitializedError,
@@ -30,10 +31,17 @@ from pgflows.exceptions import (
     WorkflowNotFoundError,
 )
 from pgflows.logger import configure_default_logging, get_logger
-from pgflows.pg_durable_client import PgDurableClient
+from pgflows.pg_durable_client import (
+    ExecutionRecord,
+    InstanceInfo,
+    InstanceNode,
+    Metrics,
+    PgDurableClient,
+)
 from pgflows.plugins import LoggingPlugin, PgflowsPlugin, StepEvent, WorkflowEvent
 from pgflows.registry import WorkflowRegistry
 from pgflows.sql_exporter import DryRunResult, SqlExporter, StepSql
+from pgflows.step_worker import StepWorker
 from pgflows.telemetry import PgflowsTelemetry
 from pgflows.types import (
     QueueMessage,
@@ -56,12 +64,17 @@ __all__ = [
     "if_rows",
     "join3",
     "loop",
+    "worker_step",
     "sleep",
     "sql_node",
     "wait_for_schedule",
     "wait_for_signal",
     # pg_durable runtime client
     "PgDurableClient",
+    "InstanceInfo",
+    "InstanceNode",
+    "ExecutionRecord",
+    "Metrics",
     # Context
     "WorkflowContext",
     "StepContext",
@@ -72,6 +85,7 @@ __all__ = [
     "PgflowsTelemetry",
     # Worker
     "WorkflowWorker",
+    "StepWorker",
     # SQL exporter
     "SqlExporter",
     "DryRunResult",

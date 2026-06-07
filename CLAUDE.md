@@ -38,14 +38,15 @@ Every infrastructure concern lives behind an ABC in `backends/base.py`. The rest
 | --- | --- |
 | `app.py` | Wiring only — assembles backends, registry, worker |
 | `context.py` | Step execution + replay logic |
-| `worker.py` | Queue polling + dispatch loop |
+| `worker.py` | Workflow queue polling + dispatch loop |
+| `step_worker.py` | pgmq+NOTIFY step consumer — runs Python steps, signals results to pg_durable |
 | `registry.py` | Decorator registration + type extraction |
 | `backends/` | All I/O (DB, queue, scheduler) |
 | `backends/base.py` | ABCs for all backends |
 | `backends/pg_durable.py` | pg_durable extension backend |
 | `telemetry.py` | OTel span management |
-| `sql_exporter.py` | pg_durable DSL generation |
-| `dsl.py` | Python DSL builders for pg_durable operators |
+| `sql_exporter.py` | pg_durable DSL generation (selectable `http` / `pgmq` step bindings) |
+| `dsl.py` | Python DSL builders for pg_durable operators (incl. `worker_step`) |
 | `fastapi_integration.py` | FastAPI router for push-mode endpoints |
 | `migrations.py` | Automatic schema migration on `initialize()` |
 | `pg_durable_client.py` | High-level client for pg_durable operations |
@@ -97,3 +98,55 @@ Install the FastAPI optional dependency when working on push-mode features:
 ```bash
 uv sync --extra fastapi
 ```
+
+### Live push-mode e2e (pg_durable + pgmq)
+
+The default `docker compose` DB has only pgmq. The push-mode flows (`df.http`,
+pgmq+NOTIFY steps) need a Postgres that also has the `pg_durable` (`df`) extension.
+Build the combined image and point the tests at it:
+
+```bash
+docker build -t pgflows-e2e-dfpgmq:latest tests/e2e/docker
+docker compose -f tests/e2e/docker/docker-compose.yml up -d --wait
+uv run pytest tests/e2e/test_live_dfpgmq.py -v   # auto-skips if df is absent
+```
+
+The full two-container stack (DB + the example app server) lives in
+`docker-compose.full.yml` (`Dockerfile.app` + `examples/server.py`).
+
+Notes for push-mode internals (learned by running real workflows on `df`):
+- `PgDurableClient.start()` **interpolates** the DSL expression into the SQL (so
+  Postgres evaluates `~>`, `|=>`, `df.http()` operators); only `label`/`database`
+  are bound params.
+- `df` substitutes `$capture` with the captured node's first-column value (not the
+  `{"rows":[…]}` envelope), so step output threads as `input_expr="$capture::jsonb"`.
+- **Parallelism is pg_durable's job and it works**: `&` (join, wait ALL) and `|`
+  (race) run branches concurrently and durably; captures made inside a branch are
+  visible after the join. `~>` binds tighter than `&`/`|`, so the DSL builders fully
+  parenthesize a parallel group (`d >> (a & b)` → `d ~> ((a) & (b))`); otherwise it
+  mis-parses as `(d ~> a) & b` and the right branch misses `d`'s captures.
+- **Thread data with result captures (`|=>`), not many `df.setvar`s.** With >1
+  durable var set, `df` serializes the vars snapshot with non-deterministic key order
+  and a JOIN replay then fails as "nondeterministic: schedule mismatch". Keep one
+  config var (e.g. `input`) and pass everything else via captures.
+- pgmq steps use a **poll-result table** (`pgflows.worker_step_results`) rather than
+  `df.wait_for_signal`: a NOTIFY-woken worker can signal before `df` registers the
+  waiter, and that signal is dropped. The poll table is race-free (the row persists);
+  `wait_for_signal` remains the right primitive for genuinely external events.
+- Prefer `app.worker_step(...)` over the bare `worker_step(...)` builder: it binds the
+  configured `step_queue`/`step_notify_channel`. The bare builder hardcodes `pgflows_steps`,
+  so a renamed queue silently enqueues where no worker listens and the instance hangs.
+- A captured `df.wait_for_signal` is the whole `{signal_name, timed_out, data}` envelope —
+  read the `df.signal` payload under `->'data'` (e.g. `$decision::jsonb->'data'->>'approved'`).
+- **pg_durable composition limits (bundled build, verified live — don't "fix" in pgflows):**
+  a join (`&`/`join3`) of trivial bare-SQL branches can hang (children `completed`, JOIN
+  `running`) while `worker_step`-branch joins resolve reliably; a loop and a parallel node
+  cannot share one instance (ContinueAsNew replay deadlock — split into separate `df.start`s);
+  `|` (race) is reliable only as a terminal node and does not cancel the loser. Accumulated
+  hung instances exhaust the worker connection pool (~10) and wedge the executor — cancel
+  stale `running` instances (`df.list_instances('running')` → `df.cancel`) or restart the DB
+  container before running the live suite.
+- Run history lives in the DB and is wrapped on `app.pg_durable`: `instance_info`,
+  `instance_nodes` (per-node trail; expands to structural THEN/JOIN/IF rows),
+  `instance_executions` (timing/events), `metrics` (cluster-wide). `app.acquire()` yields a
+  pooled connection for ad-hoc SQL around a run.

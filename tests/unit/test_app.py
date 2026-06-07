@@ -44,6 +44,34 @@ def test_app_not_initialized_raises():
         app._assert_initialized()
 
 
+def test_app_worker_step_injects_configured_queue_and_channel():
+    app = WorkflowApp(
+        config=PgflowsConfig(
+            dsn="postgresql://x:x@localhost/x",
+            step_queue="orders_steps",
+            step_notify_channel="orders_steps",
+        )
+    )
+    sql = str(app.worker_step("charge_card"))
+    assert "pgmq.send(''orders_steps''" in sql
+    assert "pg_notify(''orders_steps''" in sql
+
+
+def test_app_worker_step_kwargs_override_config():
+    app = WorkflowApp(
+        config=PgflowsConfig(dsn="postgresql://x:x@localhost/x", step_queue="orders_steps")
+    )
+    sql = str(app.worker_step("charge_card", queue="explicit_q", notify_channel="bell"))
+    assert "pgmq.send(''explicit_q''" in sql
+    assert "pg_notify(''bell''" in sql
+
+
+def test_app_acquire_requires_initialized():
+    app = _make_app()
+    with pytest.raises(RuntimeError, match="not initialized"):
+        app.acquire()
+
+
 def test_app_workflow_decorator_preserves_name():
     app = _make_app()
 

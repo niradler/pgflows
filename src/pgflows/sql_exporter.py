@@ -5,11 +5,18 @@ import inspect
 import re
 import textwrap
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
+from pgflows.dsl import worker_step
 from pgflows.registry import WorkflowRegistry
 
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9_]+$")
+
+ExportMode = Literal["http", "worker"]
+
+# Carries the pg_durable instance ID into the step endpoint for telemetry correlation,
+# and forwards the {input} durable variable as the request body so steps receive data.
+_HTTP_HEADERS = '{"X-DF-Instance-ID": "{sys_instance_id}", "Content-Type": "application/json"}'
 
 
 def _require_safe_name(value: str, label: str) -> None:
@@ -37,24 +44,46 @@ class DryRunResult:
 class SqlExporter:
     """Generate pg_durable SQL DSL from registered workflow definitions.
 
-    Each step becomes a df.http() call to the push-mode step endpoint.
-    The exported SQL can be imported into any Postgres with pg_durable to
-    transfer workflow definitions from dev → prod without code deployment.
+    Two step-invocation bindings are selectable via ``mode``:
+
+    - ``"http"`` (default) — each step becomes a ``df.http()`` call to the push-mode
+      FastAPI step endpoint. pg_durable makes an outbound request per step.
+    - ``"worker"`` — each step becomes a native ``pgmq.send`` + ``pg_notify`` +
+      poll-a-result-table chain (see ``dsl.worker_step``). pg_durable enqueues the step
+      and polls the result table; a ``StepWorker`` runs the Python function and INSERTs
+      the result. No inbound HTTP server required, and race-free (a poll row can't be
+      lost the way a fire-and-forget ``df.signal`` can).
+
+    The exported SQL can be imported into any Postgres with pg_durable to transfer
+    workflow definitions from dev → prod without code deployment.
     """
 
-    def __init__(self, registry: WorkflowRegistry, base_url: str) -> None:
+    def __init__(
+        self,
+        registry: WorkflowRegistry,
+        base_url: str | None = None,
+        *,
+        mode: ExportMode = "http",
+        step_queue: str = "pgflows_steps",
+        notify_channel: str | None = None,
+    ) -> None:
         self._registry = registry
+        self._mode = mode
+        self._step_queue = step_queue
+        self._notify_channel = notify_channel or step_queue
+        if mode == "http" and base_url is None:
+            raise ValueError("base_url is required for mode='http'")
         # Escape single quotes so base_url is safe inside a SQL string literal.
-        self._base_url = base_url.rstrip("/").replace("'", "''")
+        self._base_url = base_url.rstrip("/").replace("'", "''") if base_url else ""
 
     def export_workflow(self, workflow_name: str) -> str:
-        """Return pg_durable SQL that starts this workflow in push mode."""
+        """Return pg_durable SQL that starts this workflow."""
         _require_safe_name(workflow_name, "workflow_name")
         steps = self._collect_steps(workflow_name)
         dsl = self._build_dsl(steps, workflow_name)
         return textwrap.dedent(f"""\
-            -- pgflows export: {workflow_name}
-            SELECT df.setvar('base_url', '{self._base_url}');
+            -- pgflows export: {workflow_name} (mode={self._mode})
+            {self._preamble()}
             SELECT df.start(
                 {dsl},
                 '{workflow_name}'
@@ -67,7 +96,7 @@ class SqlExporter:
         steps = self._collect_steps(workflow_name)
         dsl = self._build_dsl(steps, workflow_name)
         sql = textwrap.dedent(f"""\
-            SELECT df.setvar('base_url', '{self._base_url}');
+            {self._preamble()}
             SELECT df.start({dsl}, '{workflow_name}');
         """)
         return DryRunResult(
@@ -92,25 +121,14 @@ class SqlExporter:
         pg_durable extension installed.
         """
         _require_safe_name(workflow_name, "workflow_name")
-        step_sqls = []
         for step_name in steps:
             _require_safe_name(step_name, "step_name")
             self._registry.get_step(step_name)  # raises KeyError if unregistered
-            fragment = (
-                f"df.http('{{{{base_url}}}}/steps/{step_name}', "
-                f"'POST', '{{\"step\": \"{step_name}\"}}')"
-            )
-            step_sqls.append(
-                StepSql(
-                    step_name=step_name,
-                    http_url=f"{self._base_url}/steps/{step_name}",
-                    sql_fragment=fragment,
-                )
-            )
+        step_sqls = self._step_sqls(steps)
         dsl = self._build_dsl(step_sqls, workflow_name)
         return textwrap.dedent(f"""\
-            -- pgflows runtime workflow: {workflow_name}
-            SELECT df.setvar('base_url', '{self._base_url}');
+            -- pgflows runtime workflow: {workflow_name} (mode={self._mode})
+            {self._preamble()}
             SELECT df.start(
                 {dsl},
                 '{workflow_name}'
@@ -119,10 +137,73 @@ class SqlExporter:
 
     def export_all(self) -> str:
         """Export all registered workflows to a single SQL file."""
-        parts = [f"-- pgflows bulk export\n-- base_url: {self._base_url}\n"]
+        parts = [f"-- pgflows bulk export (mode={self._mode})\n-- base_url: {self._base_url}\n"]
         for name in self._registry.list_workflows():
             parts.append(self.export_workflow(name))
         return "\n".join(parts)
+
+    def _preamble(self) -> str:
+        """SQL emitted before df.start() — mode-specific setup."""
+        if self._mode == "http":
+            return (
+                f"SELECT df.setvar('base_url', '{self._base_url}');\n"
+                "-- also set the workflow input forwarded to each step as the request body:\n"
+                "-- SELECT df.setvar('input', '{\"...\": \"...\"}');"
+            )
+        return (
+            f"-- ensure the step queue exists: SELECT pgmq.create('{self._step_queue}');\n"
+            f"-- run a StepWorker listening on channel '{self._notify_channel}'"
+        )
+
+    def _step_sqls(self, ordered: list[str]) -> list[StepSql]:
+        """Build per-step DSL fragments for the configured mode, in order.
+
+        In ``worker`` mode each step captures its result and the next step consumes it
+        (``$<capture>::jsonb`` — df substitutes ``$capture`` with the read node's
+        first-column value), so the chain threads output → input like a pipeline; the
+        first step receives the ``{input}`` durable var. ``http`` mode forwards the
+        ``{input}`` durable var to every step.
+        """
+        result: list[StepSql] = []
+        for index, step_name in enumerate(ordered):
+            if self._mode == "http":
+                fragment = (
+                    "df.http('{base_url}/steps/" + step_name + "', 'POST', "
+                    "'{input}', '" + _HTTP_HEADERS + "'::jsonb)"
+                )
+                result.append(
+                    StepSql(
+                        step_name=step_name,
+                        http_url=f"{self._base_url}/steps/{step_name}",
+                        sql_fragment=fragment,
+                    )
+                )
+                continue
+            if index == 0:
+                input_expr = "'{input}'::jsonb"
+            else:
+                prev_capture = f"pgflows_{ordered[index - 1]}_{index - 1}"
+                # df substitutes $capture with the read node's first-column value,
+                # which is exactly the previous step's output.
+                input_expr = f"${prev_capture}::jsonb"
+            fragment = str(
+                worker_step(
+                    step_name,
+                    result_key=f"{{sys_instance_id}}:pgflows_{step_name}_{index}",
+                    queue=self._step_queue,
+                    notify_channel=self._notify_channel,
+                    input_expr=input_expr,
+                    capture=f"pgflows_{step_name}_{index}",
+                )
+            )
+            result.append(
+                StepSql(
+                    step_name=step_name,
+                    http_url=f"worker://{self._step_queue}/{step_name}",
+                    sql_fragment=fragment,
+                )
+            )
+        return result
 
     def _collect_steps(self, workflow_name: str) -> list[StepSql]:
         """Introspect the workflow function via AST to find ctx.step() calls in order."""
@@ -130,7 +211,7 @@ class SqlExporter:
         source = textwrap.dedent(inspect.getsource(defn.fn))
         tree = ast.parse(source)
 
-        steps_with_line: list[tuple[int, StepSql]] = []
+        names_with_line: list[tuple[int, str]] = []
         for node in ast.walk(tree):
             if not isinstance(node, ast.Await):
                 continue
@@ -144,20 +225,10 @@ class SqlExporter:
                 continue
             fn_node = call.args[0]
             step_name = fn_node.id if isinstance(fn_node, ast.Name) else "unknown"
-            # {{base_url}} is pg_durable template var syntax, substituted at import time.
-            fragment = (
-                f"df.http('{{{{base_url}}}}/steps/{step_name}', "
-                f"'POST', '{{\"step\": \"{step_name}\"}}')"
-            )
-            steps_with_line.append((
-                node.lineno,
-                StepSql(
-                    step_name=step_name,
-                    http_url=f"{self._base_url}/steps/{step_name}",
-                    sql_fragment=fragment,
-                ),
-            ))
-        return [s for _, s in sorted(steps_with_line, key=lambda x: x[0])]
+            names_with_line.append((node.lineno, step_name))
+
+        ordered = [name for _, name in sorted(names_with_line, key=lambda x: x[0])]
+        return self._step_sqls(ordered)
 
     def _build_dsl(self, steps: list[StepSql], label: str) -> str:
         if not steps:

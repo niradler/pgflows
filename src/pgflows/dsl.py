@@ -1,13 +1,22 @@
 from __future__ import annotations
 
 import json
+import re
 
 _VALID_HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
+_SAFE_IDENT = re.compile(r"^[A-Za-z0-9_]+$")
 
 
 def _q(s: str) -> str:
     """Escape a string for safe embedding in a PostgreSQL single-quoted literal."""
     return "'" + s.replace("'", "''") + "'"
+
+
+def _require_ident(value: str, label: str) -> None:
+    if not _SAFE_IDENT.fullmatch(value):
+        raise ValueError(
+            f"{label} must contain only letters, digits, and underscores; got {value!r}"
+        )
 
 
 class DslNode:
@@ -27,12 +36,18 @@ class DslNode:
         return DslNode(f"{self._sql}\n    ~> {other._sql}")
 
     def __and__(self, other: DslNode) -> DslNode:
-        """Parallel join (wait for ALL): (self) & (other)"""
-        return DslNode(f"({self._sql}) & ({other._sql})")
+        """Parallel join (wait for ALL): ((self) & (other))
+
+        Fully parenthesized so the group stays atomic when sequenced: `~>` binds
+        tighter than `&` in pg_durable, so `d >> (a & b)` must render as
+        `d ~> ((a) & (b))` — otherwise it parses as `(d ~> a) & b` and the right
+        branch never sees captures produced by `d`.
+        """
+        return DslNode(f"(({self._sql}) & ({other._sql}))")
 
     def __or__(self, other: DslNode) -> DslNode:
-        """Race (first wins): (self) | (other)"""
-        return DslNode(f"({self._sql}) | ({other._sql})")
+        """Race (first wins): ((self) | (other)) — fully parenthesized, see __and__."""
+        return DslNode(f"(({self._sql}) | ({other._sql}))")
 
     def capture(self, name: str) -> DslNode:
         """Capture result as named variable: (self) |=> 'name'"""
@@ -82,11 +97,88 @@ def http(
         raise ValueError(f"method must be one of {_VALID_HTTP_METHODS}, got {method!r}")
     if not isinstance(timeout_seconds, int):
         raise TypeError("timeout_seconds must be int")
+    if headers is not None and not isinstance(headers, dict):
+        # a JSON string double-encodes into a JSON string, not an object → endpoint 422s
+        raise TypeError(
+            "headers must be a dict[str, str], not a pre-encoded JSON string; "
+            f"got {type(headers).__name__}"
+        )
     body_arg = _q(body) if body is not None else "NULL"
     headers_arg = f"{_q(json.dumps(headers))}::jsonb" if headers is not None else "NULL"
     return DslNode(
         f"df.http({_q(url)}, {_q(method.upper())}, {body_arg}, {headers_arg}, {timeout_seconds})"
     )
+
+
+_RESULTS_TABLE = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)?$")
+
+
+def worker_step(
+    step_name: str,
+    *,
+    result_key: str | None = None,
+    input_expr: str = "'{input}'::jsonb",
+    queue: str = "pgflows_steps",
+    notify_channel: str | None = None,
+    capture: str | None = None,
+    results_table: str = "pgflows.worker_step_results",
+    poll_seconds: int = 1,
+) -> DslNode:
+    """Build a native SQL → pgmq → NOTIFY → poll-result step.
+
+    Emits a race-free request/response against a Python StepWorker:
+
+      1. ``pgmq.send`` — durably enqueues ``{step, instance_id, result_key, input}``
+         onto ``queue`` for a StepWorker to pick up.
+      2. ``pg_notify`` — rings the doorbell on ``notify_channel`` so a listening
+         StepWorker wakes immediately instead of waiting for its poll tick.
+      3. ``df.loop(df.sleep, …)`` — polls ``results_table`` until the worker inserts
+         the result row keyed by ``result_key`` (the row persists, so the worker can
+         never "win the race" and drop the result, unlike a fire-and-forget signal).
+      4. ``SELECT result FROM results_table`` — reads the output back.
+
+    When captured, ``df`` substitutes ``$capture`` with the read node's first-column
+    value — which is exactly the step's output — so a later step can thread it as
+    ``input_expr="$capture::jsonb"``.
+
+    ``result_key`` must be unique per logical step invocation: the result table uses
+    ``ON CONFLICT (key) DO NOTHING``, so two calls sharing a key make the second read
+    the first's (stale) output. The default keys by step name, which collides if the
+    same step runs twice in one instance — pass a distinct ``result_key`` then (the
+    exporter appends the step index for exactly this reason).
+    """
+    _require_ident(step_name, "step_name")
+    _require_ident(queue, "queue")
+    chan = notify_channel or queue
+    _require_ident(chan, "notify_channel")
+    if capture is not None:
+        _require_ident(capture, "capture")
+    if not _RESULTS_TABLE.fullmatch(results_table):
+        raise ValueError(
+            f"results_table must be a [schema.]table identifier; got {results_table!r}"
+        )
+    if not isinstance(poll_seconds, int):
+        raise TypeError("poll_seconds must be int")
+    key = result_key or f"{{sys_instance_id}}:{step_name}"
+    key_lit = _q(key)
+
+    enqueue_sql = (
+        f"SELECT pgmq.send('{queue}', json_build_object("
+        f"'step','{step_name}',"
+        f"'instance_id','{{sys_instance_id}}',"
+        f"'result_key',{key_lit},"
+        f"'input',{input_expr})::jsonb)"
+    )
+    notify_sql = f"SELECT pg_notify('{chan}','{{sys_instance_id}}')"
+    poll = loop(
+        sleep(poll_seconds),
+        sql_node(f"SELECT NOT EXISTS(SELECT 1 FROM {results_table} WHERE key = {key_lit})"),
+    )
+    read = sql_node(f"SELECT result FROM {results_table} WHERE key = {key_lit}")
+    node = sql_node(enqueue_sql) >> sql_node(notify_sql) >> poll >> read
+    if capture is not None:
+        node = node.capture(capture)
+    return node
 
 
 def loop(body: DslNode, condition: DslNode | None = None) -> DslNode:
@@ -126,6 +218,7 @@ __all__ = [
     "if_rows",
     "join3",
     "loop",
+    "worker_step",
     "sleep",
     "sql_node",
     "wait_for_schedule",

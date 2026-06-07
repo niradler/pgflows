@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from pgflows.dsl import (
     DslNode,
     break_,
@@ -12,6 +14,7 @@ from pgflows.dsl import (
     sql_node,
     wait_for_schedule,
     wait_for_signal,
+    worker_step,
 )
 
 # ---------------------------------------------------------------------------
@@ -30,14 +33,14 @@ def test_and_parallel():
     a = DslNode("A")
     b = DslNode("B")
     result = a & b
-    assert str(result) == "(A) & (B)"
+    assert str(result) == "((A) & (B))"
 
 
 def test_or_race():
     a = DslNode("A")
     b = DslNode("B")
     result = a | b
-    assert str(result) == "(A) | (B)"
+    assert str(result) == "((A) | (B))"
 
 
 def test_capture():
@@ -113,6 +116,11 @@ def test_http_with_headers():
 def test_http_custom_timeout():
     node = http("http://example.com/step", timeout_seconds=120)
     assert str(node).endswith("120)")
+
+
+def test_http_rejects_string_headers():
+    with pytest.raises(TypeError, match="headers must be a dict"):
+        http("http://example.com/step", headers='{"Content-Type": "application/json"}')
 
 
 def test_loop_infinite():
@@ -198,3 +206,72 @@ def test_break_with_json_value():
 def test_break_escapes_quotes():
     node = break_("it's done")
     assert "it''s done" in str(node)
+
+
+# ---------------------------------------------------------------------------
+# worker_step — native SQL => pgmq => NOTIFY => wait_for_signal
+# ---------------------------------------------------------------------------
+
+
+def test_worker_step_emits_enqueue_notify_poll_and_read():
+    sql = str(worker_step("charge_card"))
+    assert "pgmq.send(" in sql
+    assert "pg_notify(" in sql
+    assert "df.loop(df.sleep(" in sql                       # poll loop
+    assert "pgflows.worker_step_results" in sql               # default results table
+    assert "df.wait_for_signal(" not in sql                 # signals are racy — not used
+
+
+def test_worker_step_carries_step_instance_resultkey_and_input():
+    sql = str(worker_step("charge_card"))
+    assert "charge_card" in sql
+    assert "{sys_instance_id}" in sql
+    assert "result_key" in sql
+    assert "{input}" in sql  # default input expression
+
+
+def test_worker_step_custom_result_key_queue_and_channel():
+    sql = str(
+        worker_step("notify", result_key="k42", queue="my_steps", notify_channel="bell")
+    )
+    assert "k42" in sql
+    assert "my_steps" in sql
+    assert "bell" in sql
+
+
+def test_worker_step_capture_wraps_with_name():
+    sql = str(worker_step("charge_card", capture="charge_result"))
+    assert "|=> 'charge_result'" in sql
+
+
+def test_worker_step_quotes_doubled_for_sql_literal():
+    # The enqueue node is itself a single-quoted DSL string, so its inner quotes double.
+    sql = str(worker_step("charge_card"))
+    assert "''step''" in sql
+    assert "''instance_id''" in sql
+
+
+def test_worker_step_custom_results_table():
+    sql = str(worker_step("s", results_table="myschema.results"))
+    assert "myschema.results" in sql
+
+
+def test_worker_step_rejects_unsafe_step_name():
+    with pytest.raises(ValueError, match="step_name"):
+        worker_step("bad'; DROP TABLE--")
+
+
+def test_worker_step_rejects_unsafe_queue():
+    with pytest.raises(ValueError, match="queue"):
+        worker_step("ok", queue="bad name")
+
+
+def test_worker_step_rejects_unsafe_results_table():
+    with pytest.raises(ValueError, match="results_table"):
+        worker_step("ok", results_table="x; DROP TABLE y")
+
+
+def test_worker_step_composes_with_operators():
+    node = worker_step("a") >> worker_step("b")
+    sql = str(node)
+    assert sql.count("pgmq.send(") == 2

@@ -4,14 +4,18 @@ import urllib.parse
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+import asyncpg
 from pydantic import BaseModel
 
 from pgflows.backends.pg_state import PgStateBackend
 from pgflows.backends.pgmq import PgmqBackend
 from pgflows.config import PgflowsConfig
+from pgflows.dsl import DslNode, worker_step
 from pgflows.migrations import run_migrations
 from pgflows.plugins import PgflowsPlugin
 from pgflows.registry import WorkflowRegistry
+from pgflows.sql_exporter import SqlExporter
+from pgflows.step_worker import StepWorker
 from pgflows.telemetry import PgflowsTelemetry
 from pgflows.types import RetryConfig, WorkflowState, WorkflowStatus
 from pgflows.worker import WorkflowWorker
@@ -32,6 +36,7 @@ class WorkflowApp:
         self._state: PgStateBackend | None = None
         self._queue: PgmqBackend | None = None
         self._worker: WorkflowWorker | None = None
+        self._step_worker: StepWorker | None = None
         self._initialized = False
         self._pg_durable_available: bool = False
         self._pg_durable_client: PgDurableClient | None = None
@@ -56,6 +61,7 @@ class WorkflowApp:
         )
         await self._queue.initialize()
         await self._queue._ensure_queue(self.config.workflow_queue)
+        await self._queue._ensure_queue(self.config.step_queue)
 
         if self._telemetry is None:
             self._telemetry = (
@@ -64,7 +70,8 @@ class WorkflowApp:
                 else PgflowsTelemetry.noop()
             )
 
-        self._pg_durable_available = await self._state.check_extension("df")
+        # The extension is named "pg_durable" (extname); it creates the "df" schema.
+        self._pg_durable_available = await self._state.check_extension("pg_durable")
 
         if self._pg_durable_available:
             from pgflows.pg_durable_client import PgDurableClient
@@ -77,6 +84,15 @@ class WorkflowApp:
             queue_backend=self._queue,
             telemetry=self._telemetry,
             queue_name=self.config.workflow_queue,
+            plugins=self._plugins,
+        )
+        self._step_worker = StepWorker(
+            registry=self.registry,
+            queue_backend=self._queue,
+            pool=self._state._pool,
+            telemetry=self._telemetry,
+            step_queue=self.config.step_queue,
+            notify_channel=self.config.step_notify_channel,
             plugins=self._plugins,
         )
         self._initialized = True
@@ -155,9 +171,70 @@ class WorkflowApp:
         self._assert_initialized()
         return await self._worker.process_batch()  # type: ignore[union-attr]
 
+    def exporter(
+        self,
+        base_url: str | None = None,
+        *,
+        mode: str = "http",
+    ) -> SqlExporter:
+        """Build a SqlExporter wired to this app's registry and queue config.
+
+        ``mode='http'`` emits df.http() push-mode SQL (requires base_url).
+        ``mode='worker'`` emits native enqueue + pg_notify + poll-result SQL,
+        picked up by the step worker (``run_step_worker``).
+        """
+        return SqlExporter(
+            self.registry,
+            base_url,
+            mode=mode,  # type: ignore[arg-type]
+            step_queue=self.config.step_queue,
+            notify_channel=self.config.step_notify_channel,
+        )
+
+    def worker_step(self, step_name: str, **kwargs: object) -> DslNode:
+        """Build a ``worker_step`` DSL node bound to THIS app's configured queue/channel.
+
+        The bare ``dsl.worker_step()`` builder defaults to the literal ``'pgflows_steps'``
+        queue regardless of config. If you override ``step_queue``/``step_notify_channel``
+        in ``PgflowsConfig`` and forget to pass them through, the DSL enqueues onto a queue
+        the StepWorker never drains and the instance hangs with no error. This helper
+        injects the configured names so the graph and the worker always agree; override
+        any of them per-call via kwargs.
+        """
+        kwargs.setdefault("queue", self.config.step_queue)
+        kwargs.setdefault("notify_channel", self.config.step_notify_channel)
+        return worker_step(step_name, **kwargs)  # type: ignore[arg-type]
+
+    def acquire(self) -> asyncpg.pool.PoolAcquireContext:
+        """Acquire a pooled connection for ad-hoc SQL around a durable run.
+
+        The archetypal operational pattern is to create/seed/inspect your own tables
+        next to a durable graph. Use as ``async with app.acquire() as conn: ...`` instead
+        of reaching into private backend internals.
+        """
+        self._assert_initialized()
+        return self._state._pool.acquire()  # type: ignore[union-attr]
+
+    async def run_step_worker(self) -> None:
+        """Run the queue+NOTIFY step worker loop (blocking).
+
+        Picks up steps dispatched by pg_durable (see SqlExporter ``mode='worker'`` /
+        ``worker_step``), runs the Python step, and writes the result to the poll
+        table pg_durable reads. Use asyncio.create_task to run in the background.
+        """
+        self._assert_initialized()
+        await self._step_worker.run()  # type: ignore[union-attr]
+
+    async def process_step_once(self) -> int:
+        """Drain one batch of pgmq-dispatched steps. Useful for tests."""
+        self._assert_initialized()
+        return await self._step_worker.process_batch()  # type: ignore[union-attr]
+
     async def close(self) -> None:
         if self._worker:
             self._worker.shutdown()
+        if self._step_worker:
+            self._step_worker.shutdown()
         if self._state:
             await self._state.close()
         if self._queue:
