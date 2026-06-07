@@ -14,9 +14,6 @@ from pyflows.sql_exporter import SqlExporter
 from pyflows.telemetry import PyflowsTelemetry
 from pyflows.types import RetryConfig, WorkflowState
 
-TEST_DSN = "postgresql://pyflows:pyflows@localhost:5433/pyflows_test"
-
-
 # ---------------------------------------------------------------------------
 # Test 1 — multi-step data pipeline
 # ---------------------------------------------------------------------------
@@ -382,7 +379,7 @@ async def test_failed_step_records_error_in_db(pyflows_config):
         assert status.state == WorkflowState.FAILED
 
         # Query step_results directly — get_step_result only returns 'completed' rows.
-        conn = await asyncpg.connect(TEST_DSN)
+        conn = await asyncpg.connect(pyflows_config.dsn, ssl=False)
         try:
             row = await conn.fetchrow(
                 """

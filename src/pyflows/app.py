@@ -32,7 +32,7 @@ class WorkflowApp:
         """Apply pending DB migrations, open connection pools, register workflows."""
         await run_migrations(self.config.dsn)
 
-        self._state = PgStateBackend(dsn=self.config.dsn)
+        self._state = PgStateBackend(dsn=self.config.dsn, ssl=self.config.db_ssl)
         await self._state.initialize()
 
         for name in self.registry.list_workflows():

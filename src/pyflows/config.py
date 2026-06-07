@@ -11,3 +11,4 @@ class PyflowsConfig(BaseModel):
     step_visibility_timeout_seconds: int = 300
     otel_enabled: bool = True
     otel_service_name: str = "pyflows"
+    db_ssl: bool = True

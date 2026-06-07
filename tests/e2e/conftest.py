@@ -1,4 +1,3 @@
-import asyncio
 import os
 
 import asyncpg
@@ -18,13 +17,14 @@ def pyflows_config():
         dsn=TEST_DSN,
         workflow_queue="pyflows_e2e_q",
         otel_enabled=False,
+        db_ssl=False,
     )
 
 
 @pytest.fixture(autouse=True, scope="session")
 async def require_db():
     try:
-        conn = await asyncio.wait_for(asyncpg.connect(TEST_DSN), timeout=2)
+        conn = await asyncpg.connect(TEST_DSN, ssl=False)
         await conn.close()
     except Exception:
         pytest.skip("Postgres not available (run: docker compose up -d)")

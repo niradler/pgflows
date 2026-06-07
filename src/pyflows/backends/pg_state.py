@@ -18,10 +18,11 @@ class PgStateBackend(OrchestratorBackend):
     returning CRT file descriptors that select.select() cannot monitor on Windows.
     """
 
-    def __init__(self, dsn: str, min_pool: int = 2, max_pool: int = 10) -> None:
+    def __init__(self, dsn: str, min_pool: int = 2, max_pool: int = 10, ssl: bool = True) -> None:
         self._dsn = dsn
         self._min_pool = min_pool
         self._max_pool = max_pool
+        self._ssl = ssl
         self._pool: asyncpg.Pool | None = None
 
     async def initialize(self) -> None:
@@ -44,6 +45,7 @@ class PgStateBackend(OrchestratorBackend):
             min_size=self._min_pool,
             max_size=self._max_pool,
             init=_init_conn,
+            ssl=self._ssl if self._ssl else False,
         )
 
     async def register_workflow(self, name: str, config: dict[str, Any]) -> None:
