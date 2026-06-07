@@ -1,14 +1,9 @@
-# Full two-container stack: Postgres (df + pgmq) + the pgflows Python app.
-#
-#   docker build -t pgflows-e2e-dfpgmq:latest tests/e2e/docker   # DB image (once)
-#   docker compose -f docker-compose.full.yml up --build
-#
-# Then: curl localhost:8000/health
-#       curl -XPOST localhost:8000/pgflows/workflows/greet_workflow/start \
-#            -H 'content-type: application/json' -d '{"input":{"name":"ada"}}'
+
 services:
   postgres:
-    image: pgflows-e2e-dfpgmq:latest
+    # niradler/pgflows-postgres:<pg>-<pgmq>-<pg_durable>
+    # pg 17, pgmq 1.5.1, pg_durable 0.2.2
+    image: niradler/pgflows-postgres:17-1.5.1-0.2.2
     environment:
       POSTGRES_USER: pgflows
       POSTGRES_PASSWORD: pgflows
@@ -30,7 +25,7 @@ services:
   app:
     build:
       context: .
-      dockerfile: Dockerfile.app
+      dockerfile: Dockerfile
     environment:
       PGFLOWS_DSN: postgresql://pgflows:pgflows@postgres:5432/pgflows_test
     ports:
