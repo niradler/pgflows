@@ -1,6 +1,18 @@
 from __future__ import annotations
 
-from pgflows.dsl import DslNode, http, loop, sleep, sql_node, wait_for_schedule, wait_for_signal
+from pgflows.dsl import (
+    DslNode,
+    break_,
+    http,
+    if_node,
+    if_rows,
+    join3,
+    loop,
+    sleep,
+    sql_node,
+    wait_for_schedule,
+    wait_for_signal,
+)
 
 # ---------------------------------------------------------------------------
 # DslNode operators
@@ -138,3 +150,51 @@ def test_chain_sequence_and_parallel():
     chain = a >> (b & c)
     assert "~>" in str(chain)
     assert "& " in str(chain) or "&" in str(chain)
+
+
+# ---------------------------------------------------------------------------
+# New DSL builders
+# ---------------------------------------------------------------------------
+
+
+def test_join3():
+    a, b, c = DslNode("A"), DslNode("B"), DslNode("C")
+    node = join3(a, b, c)
+    assert str(node) == "df.join3(A, B, C)"
+
+
+def test_if_node():
+    cond = DslNode("COND")
+    then = DslNode("THEN")
+    else_ = DslNode("ELSE")
+    node = if_node(cond, then, else_)
+    assert str(node) == "(COND) ?> (THEN) !> (ELSE)"
+
+
+def test_if_rows():
+    then = DslNode("THEN")
+    else_ = DslNode("ELSE")
+    node = if_rows("my_result", then, else_)
+    assert str(node) == "df.if_rows('my_result', THEN, ELSE)"
+
+
+def test_if_rows_escapes_name():
+    then = DslNode("T")
+    else_ = DslNode("E")
+    node = if_rows("it's result", then, else_)
+    assert "it''s result" in str(node)
+
+
+def test_break_no_value():
+    node = break_()
+    assert str(node) == "df.break()"
+
+
+def test_break_with_json_value():
+    node = break_('{"status": "done"}')
+    assert str(node) == """df.break('{"status": "done"}')"""
+
+
+def test_break_escapes_quotes():
+    node = break_("it's done")
+    assert "it''s done" in str(node)

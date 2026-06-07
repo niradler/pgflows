@@ -211,3 +211,76 @@ async def test_list_instances_maps_to_dicts():
     client = PgDurableClient(pool)
     result = await client.list_instances()
     assert result == [{"id": "abc", "status": "completed"}]
+
+
+# ---------------------------------------------------------------------------
+# getvar / unsetvar / clearvars
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_getvar_returns_value():
+    row = MagicMock()
+    row.__getitem__ = lambda self, i: "hello"
+    pool, conn = _make_pool(fetchrow_return=row)
+    client = PgDurableClient(pool)
+    result = await client.getvar("my_key")
+    assert result == "hello"
+    conn.fetchrow.assert_awaited_once_with("SELECT df.getvar($1)", "my_key")
+
+
+@pytest.mark.asyncio
+async def test_getvar_returns_none_when_no_row():
+    pool, conn = _make_pool(fetchrow_return=None)
+    client = PgDurableClient(pool)
+    result = await client.getvar("missing")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_unsetvar_calls_correct_sql():
+    pool, conn = _make_pool()
+    client = PgDurableClient(pool)
+    await client.unsetvar("my_key")
+    conn.execute.assert_awaited_once_with("SELECT df.unsetvar($1)", "my_key")
+
+
+@pytest.mark.asyncio
+async def test_clearvars_calls_correct_sql():
+    pool, conn = _make_pool()
+    client = PgDurableClient(pool)
+    await client.clearvars()
+    conn.execute.assert_awaited_once_with("SELECT df.clearvars()")
+
+
+# ---------------------------------------------------------------------------
+# grant_usage / revoke_usage
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_grant_usage_defaults():
+    pool, conn = _make_pool()
+    client = PgDurableClient(pool)
+    await client.grant_usage("analyst")
+    conn.execute.assert_awaited_once_with(
+        "SELECT df.grant_usage($1, $2, $3)", "analyst", False, False
+    )
+
+
+@pytest.mark.asyncio
+async def test_grant_usage_with_http_and_grant():
+    pool, conn = _make_pool()
+    client = PgDurableClient(pool)
+    await client.grant_usage("analyst", include_http=True, with_grant=True)
+    conn.execute.assert_awaited_once_with(
+        "SELECT df.grant_usage($1, $2, $3)", "analyst", True, True
+    )
+
+
+@pytest.mark.asyncio
+async def test_revoke_usage_calls_correct_sql():
+    pool, conn = _make_pool()
+    client = PgDurableClient(pool)
+    await client.revoke_usage("analyst")
+    conn.execute.assert_awaited_once_with("SELECT df.revoke_usage($1)", "analyst")

@@ -57,11 +57,12 @@ class WorkflowApp:
         await self._queue.initialize()
         await self._queue._ensure_queue(self.config.workflow_queue)
 
-        self._telemetry = (
-            PgflowsTelemetry.from_env(self.config.otel_service_name)
-            if self.config.otel_enabled
-            else PgflowsTelemetry.noop()
-        )
+        if self._telemetry is None:
+            self._telemetry = (
+                PgflowsTelemetry.from_env(self.config.otel_service_name)
+                if self.config.otel_enabled
+                else PgflowsTelemetry.noop()
+            )
 
         self._pg_durable_available = await self._state.check_extension("df")
 
@@ -84,6 +85,11 @@ class WorkflowApp:
     def pg_durable_available(self) -> bool:
         """True if the pg_durable (df) extension is installed in the connected database."""
         return self._pg_durable_available
+
+    @property
+    def telemetry(self) -> PgflowsTelemetry:
+        """Active telemetry instance, or a no-op if not yet initialized."""
+        return self._telemetry or PgflowsTelemetry.noop()
 
     @property
     def pg_durable(self) -> PgDurableClient:

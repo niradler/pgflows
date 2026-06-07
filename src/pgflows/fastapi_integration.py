@@ -29,15 +29,23 @@ def create_pgflows_router(app: WorkflowApp, prefix: str = "") -> APIRouter:
 
     pg_durable calls POST {base_url}/steps/{step_name} for each step.
     """
-    from fastapi import APIRouter, Body, HTTPException
+    from fastapi import APIRouter, Body, Header, HTTPException
 
     router = APIRouter(prefix=prefix, tags=["pgflows"])
 
     @router.post("/steps/{step_name}", summary="Push endpoint for pg_durable")
     async def execute_step(
-        step_name: str, payload: dict[str, Any] = Body(...)
+        step_name: str,
+        payload: dict[str, Any] = Body(...),
+        x_df_instance_id: str | None = Header(default=None),
     ) -> dict[str, Any]:
-        """Execute a registered step. Called by pg_durable df.http() nodes."""
+        """Execute a registered step. Called by pg_durable df.http() nodes.
+
+        Pass the pg_durable instance ID via the X-DF-Instance-ID header using
+        $var substitution in df.http()::
+
+            df.http(url, headers='{"X-DF-Instance-ID": "$my_id"}'::jsonb)
+        """
         try:
             step_defn = app.registry.get_step(step_name)
         except KeyError:
@@ -48,11 +56,14 @@ def create_pgflows_router(app: WorkflowApp, prefix: str = "") -> APIRouter:
         except Exception as exc:
             raise HTTPException(status_code=422, detail=str(exc))
 
+        instance_id = x_df_instance_id or "push-mode"
+
         from pgflows.context import StepContext
 
-        ctx = StepContext(instance_id="push-mode", step_name=step_name)
+        ctx = StepContext(instance_id=instance_id, step_name=step_name)
         try:
-            result = await step_defn.fn(ctx, input_obj)
+            with app.telemetry.step_span(instance_id, step_name, 0):
+                result = await step_defn.fn(ctx, input_obj)
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc))
 

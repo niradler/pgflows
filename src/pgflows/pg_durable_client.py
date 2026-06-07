@@ -92,5 +92,38 @@ class PgDurableClient:
             )
             return [dict(r) for r in rows]
 
+    async def getvar(self, name: str) -> str | None:
+        """Get a variable owned by the current user."""
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT df.getvar($1)", name)
+            return row[0] if row else None
+
+    async def unsetvar(self, name: str) -> None:
+        """Remove a variable owned by the current user."""
+        async with self._pool.acquire() as conn:
+            await conn.execute("SELECT df.unsetvar($1)", name)
+
+    async def clearvars(self) -> None:
+        """Clear all variables for the current user."""
+        async with self._pool.acquire() as conn:
+            await conn.execute("SELECT df.clearvars()")
+
+    async def grant_usage(
+        self,
+        role_name: str,
+        include_http: bool = False,
+        with_grant: bool = False,
+    ) -> None:
+        """Grant pg_durable usage privileges to a role."""
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                "SELECT df.grant_usage($1, $2, $3)", role_name, include_http, with_grant
+            )
+
+    async def revoke_usage(self, role_name: str) -> None:
+        """Revoke all pg_durable privileges from a role."""
+        async with self._pool.acquire() as conn:
+            await conn.execute("SELECT df.revoke_usage($1)", role_name)
+
 
 __all__ = ["PgDurableClient"]

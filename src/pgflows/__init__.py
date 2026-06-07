@@ -10,7 +10,11 @@ from pgflows.config import PgflowsConfig
 from pgflows.context import StepContext, WorkflowContext
 from pgflows.dsl import (
     DslNode,
+    break_,
     http,
+    if_node,
+    if_rows,
+    join3,
     loop,
     sleep,
     sql_node,
@@ -46,7 +50,11 @@ __all__ = [
     "WorkflowApp",
     # DSL builders
     "DslNode",
+    "break_",
     "http",
+    "if_node",
+    "if_rows",
+    "join3",
     "loop",
     "sleep",
     "sql_node",

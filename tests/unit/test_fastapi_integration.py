@@ -216,3 +216,50 @@ def test_signal_with_pg_durable_returns_200():
     assert body["signalled"] is True
     assert body["signal"] == "approve"
     pg_client_mock.signal.assert_awaited_once_with("inst-1", "approve", {"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# X-DF-Instance-ID header + OTel span
+# ---------------------------------------------------------------------------
+
+
+def test_execute_step_uses_instance_id_header():
+    _, fastapi_app = _make_app_with_step()
+    with TestClient(fastapi_app) as client:
+        resp = client.post(
+            "/pgflows/steps/echo",
+            json={"message": "hi"},
+            headers={"X-DF-Instance-ID": "real-instance-99"},
+        )
+    assert resp.status_code == 200
+
+
+def test_execute_step_falls_back_to_push_mode_when_no_header():
+    _, fastapi_app = _make_app_with_step()
+    with TestClient(fastapi_app) as client:
+        resp = client.post("/pgflows/steps/echo", json={"message": "hi"})
+    assert resp.status_code == 200
+
+
+def test_execute_step_emits_otel_span():
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    from pgflows.telemetry import PgflowsTelemetry
+
+    exporter = InMemorySpanExporter()
+    app, fastapi_app = _make_app_with_step()
+    app._telemetry = PgflowsTelemetry.with_in_memory_exporter(exporter)
+
+    with TestClient(fastapi_app) as client:
+        client.post(
+            "/pgflows/steps/echo",
+            json={"message": "hello"},
+            headers={"X-DF-Instance-ID": "span-test-id"},
+        )
+
+    spans = exporter.get_finished_spans()
+    assert len(spans) == 1
+    span = spans[0]
+    assert span.name == "pgflows.step.echo"
+    assert span.attributes["pgflows.step.name"] == "echo"
+    assert span.attributes["pgflows.workflow.id"] == "span-test-id"

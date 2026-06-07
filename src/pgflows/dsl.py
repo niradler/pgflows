@@ -96,9 +96,35 @@ def loop(body: DslNode, condition: DslNode | None = None) -> DslNode:
     return DslNode(f"df.loop({body._sql}, {condition._sql})")
 
 
+def join3(a: DslNode, b: DslNode, c: DslNode) -> DslNode:
+    """Three-way parallel join — waits for all three to complete."""
+    return DslNode(f"df.join3({a._sql}, {b._sql}, {c._sql})")
+
+
+def if_node(condition: DslNode, then: DslNode, else_: DslNode) -> DslNode:
+    """Conditional: condition ?> then !> else_ (standalone, both branches required)."""
+    return DslNode(f"({condition._sql}) ?> ({then._sql}) !> ({else_._sql})")
+
+
+def if_rows(result_name: str, then: DslNode, else_: DslNode) -> DslNode:
+    """Branch on whether a captured result has rows — no SQL executed, in-memory check."""
+    return DslNode(f"df.if_rows({_q(result_name)}, {then._sql}, {else_._sql})")
+
+
+def break_(value: str | None = None) -> DslNode:
+    """Exit the enclosing loop. value is literal JSON (not auto-wrapped)."""
+    if value is None:
+        return DslNode("df.break()")
+    return DslNode(f"df.break({_q(value)})")
+
+
 __all__ = [
     "DslNode",
+    "break_",
     "http",
+    "if_node",
+    "if_rows",
+    "join3",
     "loop",
     "sleep",
     "sql_node",
