@@ -79,6 +79,7 @@ class WorkflowRegistry:
             step_defaults=step_defaults or RetryConfig(),
         )
         self._workflows[wf_name] = defn
+        fn._pyflows_name = wf_name  # type: ignore[attr-defined]
         return defn
 
     def get_step(self, name: str) -> StepDefinition:

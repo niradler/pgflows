@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from abc import ABC
 from dataclasses import dataclass
@@ -89,9 +90,14 @@ class LoggingPlugin(PyflowsPlugin):
 
 
 async def fire(plugins: list[PyflowsPlugin], hook: str, *args: Any, **kwargs: Any) -> None:
-    """Call a hook on all plugins, swallowing individual plugin errors."""
-    for plugin in plugins:
+    """Call a hook on all plugins concurrently, swallowing individual plugin errors."""
+    if not plugins:
+        return
+
+    async def _call(plugin: PyflowsPlugin) -> None:
         try:
             await getattr(plugin, hook)(*args, **kwargs)
         except Exception:
             logger.warning("plugin %s.%s raised", type(plugin).__name__, hook, exc_info=True)
+
+    await asyncio.gather(*[_call(p) for p in plugins])

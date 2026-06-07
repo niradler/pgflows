@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 import traceback
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, TypeVar, get_type_hints
@@ -125,12 +126,17 @@ class WorkflowContext:
                     )
                     await fire(self._plugins, "on_step_error", event, exc)
                     if attempt <= retry_cfg.max_retries:
-                        delay = min(
-                            retry_cfg.initial_delay_seconds * (2 ** (attempt - 1)),
-                            retry_cfg.max_delay_seconds,
-                        )
+                        base = retry_cfg.initial_delay_seconds
+                        if retry_cfg.backoff == "exponential":
+                            delay = base * (2 ** (attempt - 1))
+                        else:
+                            delay = base * attempt
+                        delay = min(delay, retry_cfg.max_delay_seconds)
+                        if retry_cfg.jitter:
+                            delay *= random.uniform(0.5, 1.0)
                         await asyncio.sleep(delay)
-            raise StepExecutionError(step_name, last_error)  # type: ignore[arg-type]
+            assert last_error is not None
+            raise StepExecutionError(step_name, last_error) from last_error
 
     def _get_registered_retry(self, fn: Callable) -> RetryConfig | None:
         if self._registry is None:
@@ -144,6 +150,6 @@ class WorkflowContext:
 class StepContext:
     """Passed to step functions — provides workflow metadata without step primitives."""
 
-    def __init__(self, workflow_id: str, step_name: str) -> None:
-        self.workflow_id = workflow_id
+    def __init__(self, instance_id: str, step_name: str) -> None:
+        self.instance_id = instance_id
         self.step_name = step_name

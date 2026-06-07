@@ -2,7 +2,7 @@
 .PHONY: help install test test-unit test-e2e lint fmt up down clean
 
 # ── environment ──────────────────────────────────────────────────────────────
-PYFLOWS_TEST_DSN ?= postgresql://pyflows:pyflows@localhost:5433/pyflows_test
+PYFLOWS_TEST_DSN ?= postgresql://pyflows:pyflows@127.0.0.1:5433/pyflows_test
 
 # ── help ─────────────────────────────────────────────────────────────────────
 help:

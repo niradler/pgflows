@@ -119,6 +119,18 @@ async def test_step_raises_after_max_retries():
     assert state.save_step_error.call_count == 2  # max_retries=1 → 2 attempts total
 
 
+async def test_step_execution_error_chains_original_exception():
+    state = make_state(cached=None)
+    retry = RetryConfig(max_retries=0, initial_delay_seconds=0.001)
+    ctx = make_ctx(state, step_defaults=retry)
+
+    with pytest.raises(StepExecutionError) as exc_info:
+        await ctx.step(always_fails, NumberInput(value=0))
+
+    assert isinstance(exc_info.value.__cause__, ValueError)
+    assert str(exc_info.value.__cause__) == "deliberate failure"
+
+
 async def test_step_name_override():
     state = make_state(cached=None)
     ctx = make_ctx(state)

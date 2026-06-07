@@ -1,3 +1,4 @@
+import pytest
 from pydantic import BaseModel
 
 from pyflows.registry import WorkflowRegistry
@@ -100,3 +101,62 @@ def test_base_url_trailing_slash_stripped():
     exporter = SqlExporter(registry=reg, base_url="http://localhost:8000/")
     result = exporter.dry_run("no_step_workflow")
     assert result.sql is not None
+
+
+# --- compose() tests ---
+
+
+def test_compose_produces_dsl():
+    _, exporter = _make_exporter()
+    sql = exporter.compose("my_runtime_wf", ["check_service", "notify"])
+    assert "df.start(" in sql
+    assert "df.http(" in sql
+    assert "check_service" in sql
+    assert "notify" in sql
+    assert "my_runtime_wf" in sql
+
+
+def test_compose_step_order():
+    _, exporter = _make_exporter()
+    sql = exporter.compose("ordered_wf", ["check_service", "notify"])
+    assert sql.index("check_service") < sql.index("notify")
+
+
+def test_compose_single_step():
+    _, exporter = _make_exporter()
+    sql = exporter.compose("single_step_wf", ["check_service"])
+    assert "check_service" in sql
+    assert "~>" not in sql
+
+
+def test_compose_unregistered_step_raises():
+    _, exporter = _make_exporter()
+    with pytest.raises(KeyError):
+        exporter.compose("bad_wf", ["check_service", "nonexistent_step"])
+
+
+def test_compose_empty_steps():
+    _, exporter = _make_exporter()
+    sql = exporter.compose("empty_wf", [])
+    assert "no steps" in sql
+
+
+def test_compose_rejects_unsafe_workflow_name():
+    _, exporter = _make_exporter()
+    with pytest.raises(ValueError, match="workflow_name"):
+        exporter.compose("bad'); DROP TABLE df.instances; --", ["check_service"])
+
+
+def test_export_workflow_rejects_unsafe_name():
+    _, exporter = _make_exporter()
+    with pytest.raises(ValueError, match="workflow_name"):
+        exporter.export_workflow("bad'name")
+
+
+def test_compose_rejects_unsafe_step_name():
+    reg = WorkflowRegistry()
+    # register with a safe Python name, but attempt compose with injected name
+    reg.register_step(check_service, name="safe_step")
+    exporter = SqlExporter(registry=reg, base_url="http://localhost:8000")
+    with pytest.raises(ValueError, match="step_name"):
+        exporter.compose("my_wf", ["safe_step'; DROP TABLE--"])

@@ -101,6 +101,22 @@ class PgStateBackend(OrchestratorBackend):
             error=row["error"],
         )
 
+    async def try_claim_instance(self, instance_id: str) -> bool:
+        """Atomically transition pending→running. Returns False if already claimed."""
+        self._assert_initialized()
+        async with self._pool.acquire() as conn:  # type: ignore[union-attr]
+            status = await conn.execute(
+                "UPDATE pyflows.workflow_instances"
+                " SET state='running', updated_at=NOW()"
+                " WHERE instance_id=$1::uuid AND state='pending'",
+                instance_id,
+            )
+        return status == "UPDATE 1"
+
+    async def check_extension(self, extname: str) -> bool:
+        row = await self._fetchone("SELECT 1 FROM pg_extension WHERE extname = $1", extname)
+        return row is not None
+
     async def update_instance_state(
         self,
         instance_id: str,

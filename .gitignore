@@ -10,3 +10,6 @@ wheels/
 # Virtual environments
 .venv
 .env
+
+# Claude Code session notes (keep skills/, not docs/)
+.claude/docs/

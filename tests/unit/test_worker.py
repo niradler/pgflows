@@ -37,6 +37,7 @@ async def test_worker_processes_task():
     registry.register_workflow(simple_workflow, name="simple_workflow")
 
     state = AsyncMock()
+    state.try_claim_instance.return_value = True
     state.get_step_result.return_value = None
     queue = AsyncMock()
     queue.dequeue.return_value = [
@@ -54,6 +55,7 @@ async def test_worker_processes_task():
     )
     await worker.process_batch()
 
+    state.try_claim_instance.assert_called_once_with("inst-001")
     last_call = state.update_instance_state.call_args_list[-1]
     assert last_call[0][1] == WorkflowState.COMPLETED
 
@@ -68,6 +70,7 @@ async def test_worker_marks_failed_on_exception():
     registry.register_workflow(failing_workflow, name="failing_workflow")
 
     state = AsyncMock()
+    state.try_claim_instance.return_value = True
     state.get_step_result.return_value = None
     queue = AsyncMock()
     queue.dequeue.return_value = [
@@ -87,7 +90,35 @@ async def test_worker_marks_failed_on_exception():
 
     last_call = state.update_instance_state.call_args_list[-1]
     assert last_call[0][1] == WorkflowState.FAILED
-    queue.nack.assert_called_once()
+    queue.archive.assert_called_once()
+    queue.nack.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_worker_skips_non_pending_instance():
+    registry = WorkflowRegistry()
+    registry.register_workflow(simple_workflow, name="simple_workflow")
+
+    state = AsyncMock()
+    state.try_claim_instance.return_value = False  # already running/cancelled/completed
+    queue = AsyncMock()
+    queue.dequeue.return_value = [
+        _make_queue_msg(
+            {"workflow_name": "simple_workflow", "instance_id": "inst-taken", "input": {"x": 5}}
+        )
+    ]
+
+    worker = WorkflowWorker(
+        registry=registry,
+        state_backend=state,
+        queue_backend=queue,
+        telemetry=PyflowsTelemetry.noop(),
+        queue_name="pyflows_workflows",
+    )
+    await worker.process_batch()
+
+    queue.ack.assert_called_once_with("pyflows_workflows", "1")
+    state.update_instance_state.assert_not_called()
 
 
 @pytest.mark.asyncio

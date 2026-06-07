@@ -1,14 +1,23 @@
+import os
+import urllib.parse
+
 import pytest
 
 from pyflows.backends.pgmq import PgmqBackend
 from pyflows.types import QueueMessage
 
+TEST_DSN = os.getenv(
+    "PYFLOWS_TEST_DSN",
+    "postgresql://pyflows:pyflows@127.0.0.1:5433/pyflows_test",
+)
+_PARSED_DSN = urllib.parse.urlparse(TEST_DSN)
+
 PGMQ_ARGS = dict(
-    host="localhost",
-    port="5433",
-    database="pyflows_test",
-    username="pyflows",
-    password="pyflows",
+    host=_PARSED_DSN.hostname or "127.0.0.1",
+    port=str(_PARSED_DSN.port or 5432),
+    database=(_PARSED_DSN.path or "/postgres").lstrip("/"),
+    username=_PARSED_DSN.username or "postgres",
+    password=_PARSED_DSN.password or "postgres",
     visibility_timeout_seconds=5,
 )
 

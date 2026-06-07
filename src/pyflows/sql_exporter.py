@@ -2,11 +2,21 @@ from __future__ import annotations
 
 import ast
 import inspect
+import re
 import textwrap
 from dataclasses import dataclass, field
 from typing import Any
 
 from pyflows.registry import WorkflowRegistry
+
+_SAFE_NAME = re.compile(r"^[A-Za-z0-9_]+$")
+
+
+def _require_safe_name(value: str, label: str) -> None:
+    if not _SAFE_NAME.fullmatch(value):
+        raise ValueError(
+            f"{label} must contain only letters, digits, and underscores; got {value!r}"
+        )
 
 
 @dataclass
@@ -34,10 +44,12 @@ class SqlExporter:
 
     def __init__(self, registry: WorkflowRegistry, base_url: str) -> None:
         self._registry = registry
-        self._base_url = base_url.rstrip("/")
+        # Escape single quotes so base_url is safe inside a SQL string literal.
+        self._base_url = base_url.rstrip("/").replace("'", "''")
 
     def export_workflow(self, workflow_name: str) -> str:
         """Return pg_durable SQL that starts this workflow in push mode."""
+        _require_safe_name(workflow_name, "workflow_name")
         steps = self._collect_steps(workflow_name)
         dsl = self._build_dsl(steps, workflow_name)
         return textwrap.dedent(f"""\
@@ -51,6 +63,7 @@ class SqlExporter:
 
     def dry_run(self, workflow_name: str, input_data: dict[str, Any] | None = None) -> DryRunResult:
         """Trace workflow structure without executing. Returns steps + SQL."""
+        _require_safe_name(workflow_name, "workflow_name")
         steps = self._collect_steps(workflow_name)
         dsl = self._build_dsl(steps, workflow_name)
         sql = textwrap.dedent(f"""\
@@ -63,6 +76,46 @@ class SqlExporter:
             sql=sql,
             input_schema=input_data or {},
         )
+
+    def compose(self, workflow_name: str, steps: list[str]) -> str:
+        """Build pg_durable DSL from an explicit list of registered step names.
+
+        Unlike export_workflow(), this does not require a Python workflow function —
+        compose step sequences at runtime from config, API payloads, or any dynamic
+        source. Each step name must already be registered with the app.
+
+        Example::
+
+            sql = exporter.compose("on_call_response", ["page_engineer", "create_ticket"])
+
+        The returned SQL is ready to execute against a Postgres database that has the
+        pg_durable extension installed.
+        """
+        _require_safe_name(workflow_name, "workflow_name")
+        step_sqls = []
+        for step_name in steps:
+            _require_safe_name(step_name, "step_name")
+            self._registry.get_step(step_name)  # raises KeyError if unregistered
+            fragment = (
+                f"df.http('{{{{base_url}}}}/steps/{step_name}', "
+                f"'POST', '{{\"step\": \"{step_name}\"}}')"
+            )
+            step_sqls.append(
+                StepSql(
+                    step_name=step_name,
+                    http_url=f"{self._base_url}/steps/{step_name}",
+                    sql_fragment=fragment,
+                )
+            )
+        dsl = self._build_dsl(step_sqls, workflow_name)
+        return textwrap.dedent(f"""\
+            -- pyflows runtime workflow: {workflow_name}
+            SELECT df.setvar('base_url', '{self._base_url}');
+            SELECT df.start(
+                {dsl},
+                '{workflow_name}'
+            );
+        """)
 
     def export_all(self) -> str:
         """Export all registered workflows to a single SQL file."""
@@ -77,7 +130,7 @@ class SqlExporter:
         source = textwrap.dedent(inspect.getsource(defn.fn))
         tree = ast.parse(source)
 
-        steps: list[StepSql] = []
+        steps_with_line: list[tuple[int, StepSql]] = []
         for node in ast.walk(tree):
             if not isinstance(node, ast.Await):
                 continue
@@ -96,14 +149,15 @@ class SqlExporter:
                 f"df.http('{{{{base_url}}}}/steps/{step_name}', "
                 f"'POST', '{{\"step\": \"{step_name}\"}}')"
             )
-            steps.append(
+            steps_with_line.append((
+                node.lineno,
                 StepSql(
                     step_name=step_name,
                     http_url=f"{self._base_url}/steps/{step_name}",
                     sql_fragment=fragment,
-                )
-            )
-        return steps
+                ),
+            ))
+        return [s for _, s in sorted(steps_with_line, key=lambda x: x[0])]
 
     def _build_dsl(self, steps: list[StepSql], label: str) -> str:
         if not steps:

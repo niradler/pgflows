@@ -23,7 +23,7 @@ class WorkflowStatus(BaseModel):
     created_at: datetime
     updated_at: datetime
     error: str | None = None
-    output: Any | None = None
+    output: dict[str, Any] | None = None
 
 
 class QueueMessage(BaseModel):

@@ -1,15 +1,20 @@
+import os
+
 import pytest
 
 from pyflows.backends.pg_state import PgStateBackend
 from pyflows.exceptions import WorkflowNotFoundError
 from pyflows.types import WorkflowState
 
-TEST_DSN = "postgresql://pyflows:pyflows@localhost:5433/pyflows_test"
+TEST_DSN = os.getenv(
+    "PYFLOWS_TEST_DSN",
+    "postgresql://pyflows:pyflows@127.0.0.1:5433/pyflows_test",
+)
 
 
 @pytest.fixture
 async def state(require_db):
-    backend = PgStateBackend(dsn=TEST_DSN)
+    backend = PgStateBackend(dsn=TEST_DSN, ssl=False)
     await backend.initialize()
     yield backend
     await backend.close()

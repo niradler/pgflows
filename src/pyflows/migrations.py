@@ -49,6 +49,13 @@ MIGRATIONS: list[tuple[str, str]] = [
         );
         """,
     ),
+    (
+        "0002_composite_index",
+        """
+        CREATE INDEX IF NOT EXISTS idx_instances_wf_state
+            ON pyflows.workflow_instances(workflow_name, state);
+        """,
+    ),
 ]
 
 _BOOTSTRAP_SQL = """
@@ -60,9 +67,9 @@ CREATE TABLE IF NOT EXISTS pyflows.schema_migrations (
 """
 
 
-async def run_migrations(dsn: str) -> int:
+async def run_migrations(dsn: str, ssl: bool = False) -> int:
     """Apply pending migrations. Returns count of newly applied migrations."""
-    conn = await asyncpg.connect(dsn)
+    conn = await asyncpg.connect(dsn, ssl=ssl)
     try:
         await conn.execute(_BOOTSTRAP_SQL)
         rows = await conn.fetch("SELECT version FROM pyflows.schema_migrations")

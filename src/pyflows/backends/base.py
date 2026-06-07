@@ -73,6 +73,10 @@ class QueueBackend(ABC):
         """Return a message to the queue for redelivery."""
 
     @abstractmethod
+    async def archive(self, queue: str, message_id: str) -> None:
+        """Move a message to the dead-letter archive (permanently removes from live queue)."""
+
+    @abstractmethod
     async def close(self) -> None:
         """Release connections and clean up resources."""
 

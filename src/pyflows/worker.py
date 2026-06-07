@@ -79,11 +79,15 @@ class WorkflowWorker:
             await self._queue.ack(self._queue_name, msg.message_id)
             return
 
+        if not await self._state.try_claim_instance(instance_id):
+            # Not pending: already running, completed, failed, or cancelled — stale message.
+            await self._queue.ack(self._queue_name, msg.message_id)
+            return
+
         input_model = defn.input_type.model_validate(raw_input)
         wf_event = WorkflowEvent(instance_id=instance_id, workflow_name=workflow_name)
 
         with self._telemetry.workflow_span(workflow_name, instance_id):
-            await self._state.update_instance_state(instance_id, WorkflowState.RUNNING)
             await fire(self._plugins, "before_workflow", wf_event)
             try:
                 ctx = WorkflowContext(
@@ -102,7 +106,7 @@ class WorkflowWorker:
                     instance_id, WorkflowState.FAILED, error=error
                 )
                 await fire(self._plugins, "on_workflow_error", wf_event, exc)
-                await self._queue.nack(self._queue_name, msg.message_id)
+                await self._queue.archive(self._queue_name, msg.message_id)
                 return
 
             try:

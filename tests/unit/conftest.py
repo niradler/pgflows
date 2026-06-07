@@ -8,7 +8,7 @@ import pytest
 
 _TEST_DSN = os.getenv(
     "PYFLOWS_TEST_DSN",
-    "postgresql://pyflows:pyflows@localhost:5433/pyflows_test",
+    "postgresql://pyflows:pyflows@127.0.0.1:5433/pyflows_test",
 )
 
 
@@ -16,7 +16,7 @@ _TEST_DSN = os.getenv(
 async def require_db():
     """Skip the test if Postgres is not reachable."""
     try:
-        conn = await asyncio.wait_for(asyncpg.connect(_TEST_DSN), timeout=2)
+        conn = await asyncio.wait_for(asyncpg.connect(_TEST_DSN, ssl=False), timeout=2)
         await conn.close()
     except Exception:
         pytest.skip("Postgres not available (run: docker compose up -d)")

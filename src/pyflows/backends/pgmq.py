@@ -47,8 +47,12 @@ class PgmqBackend(QueueBackend):
         await self._client.init()
 
     async def _ensure_queue(self, queue: str) -> None:
+        self._assert_initialized()
         if queue not in self._known_queues:
-            await self._client.create_queue(queue)
+            try:
+                await self._client.create_queue(queue)  # type: ignore[union-attr]
+            except Exception:
+                pass  # queue already exists — safe to ignore
             self._known_queues.add(queue)
 
     async def enqueue(self, queue: str, message: dict[str, Any], delay_seconds: int = 0) -> str:
@@ -82,6 +86,10 @@ class PgmqBackend(QueueBackend):
         self._assert_initialized()
         # Reset visibility timeout to 0 so message is immediately re-readable
         await self._client.set_vt(queue, int(message_id), 0)
+
+    async def archive(self, queue: str, message_id: str) -> None:
+        self._assert_initialized()
+        await self._client.archive(queue, int(message_id))
 
     async def listen(
         self,

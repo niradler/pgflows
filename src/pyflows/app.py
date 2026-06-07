@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import urllib.parse
 from collections.abc import Callable
-from typing import Any
+
+from pydantic import BaseModel
 
 from pyflows.backends.pg_state import PgStateBackend
 from pyflows.backends.pgmq import PgmqBackend
@@ -27,10 +28,11 @@ class WorkflowApp:
         self._queue: PgmqBackend | None = None
         self._worker: WorkflowWorker | None = None
         self._initialized = False
+        self._pg_durable_available: bool = False
 
     async def initialize(self) -> None:
         """Apply pending DB migrations, open connection pools, register workflows."""
-        await run_migrations(self.config.dsn)
+        await run_migrations(self.config.dsn, ssl=self.config.db_ssl)
 
         self._state = PgStateBackend(dsn=self.config.dsn, ssl=self.config.db_ssl)
         await self._state.initialize()
@@ -55,6 +57,8 @@ class WorkflowApp:
             else PyflowsTelemetry.noop()
         )
 
+        self._pg_durable_available = await self._state.check_extension("df")
+
         self._worker = WorkflowWorker(
             registry=self.registry,
             state_backend=self._state,
@@ -65,10 +69,17 @@ class WorkflowApp:
         )
         self._initialized = True
 
-    async def start(self, workflow_fn: Callable, input_model: Any) -> str:
+    @property
+    def pg_durable_available(self) -> bool:
+        """True if the pg_durable (df) extension is installed in the connected database."""
+        return self._pg_durable_available
+
+    async def start(self, workflow_fn: Callable, input_model: BaseModel) -> str:
         """Enqueue a workflow run. Returns instance_id."""
         self._assert_initialized()
-        defn = self.registry.get_workflow(workflow_fn.__name__)
+        defn = self.registry.get_workflow(
+            getattr(workflow_fn, "_pyflows_name", workflow_fn.__name__)
+        )
         input_dict = input_model.model_dump()
         instance_id = await self._state.create_instance(defn.name, input_dict)  # type: ignore[union-attr]
         await self._queue.enqueue(  # type: ignore[union-attr]

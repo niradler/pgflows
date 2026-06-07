@@ -494,3 +494,194 @@ async def test_otel_spans_generated(pyflows_config):
         assert attrs["pyflows.workflow.id"] == instance_id
     finally:
         await app.close()
+
+
+# ---------------------------------------------------------------------------
+# Test 10 — failed workflow message is archived (DLQ), not re-queued
+# ---------------------------------------------------------------------------
+
+
+class DlqInput(BaseModel):
+    x: int
+
+
+class DlqOutput(BaseModel):
+    x: int
+
+
+@pytest.mark.asyncio
+async def test_failed_workflow_archived_not_requeued(pyflows_config):
+    app = WorkflowApp(config=pyflows_config)
+
+    @app.step(retry=RetryConfig(max_retries=0, initial_delay_seconds=0.0))
+    async def dlq_explodes(ctx: StepContext, input: DlqInput) -> DlqOutput:
+        raise RuntimeError("dlq-test")
+
+    @app.workflow()
+    async def dlq_workflow(ctx, input: DlqInput) -> DlqOutput:
+        return await ctx.step(dlq_explodes, input)
+
+    await app.initialize()
+    try:
+        instance_id = await app.start(dlq_workflow, DlqInput(x=1))
+        await app.process_once()
+
+        status = await app.get_status(instance_id)
+        assert status.state == WorkflowState.FAILED
+
+        # Message must be archived — a second pass must find nothing.
+        second_pass = await app.process_once()
+        assert second_pass == 0, "failed workflow was re-queued instead of archived"
+
+        # Confirm the message is in the pgmq archive table.
+        conn = await asyncpg.connect(pyflows_config.dsn, ssl=False)
+        try:
+            count = await conn.fetchval(
+                f"SELECT COUNT(*) FROM pgmq.a_{pyflows_config.workflow_queue}"
+                " WHERE message->>'instance_id' = $1",
+                instance_id,
+            )
+        finally:
+            await conn.close()
+
+        assert count >= 1, "message not in pgmq archive"
+    finally:
+        await app.close()
+
+
+# ---------------------------------------------------------------------------
+# Test 11 — duplicate message processed only once (worker coordination)
+# ---------------------------------------------------------------------------
+
+
+class ClaimInput(BaseModel):
+    v: int
+
+
+class ClaimOutput(BaseModel):
+    v: int
+
+
+@pytest.mark.asyncio
+async def test_duplicate_message_processed_only_once(pyflows_config):
+    call_count = {"n": 0}
+    app = WorkflowApp(config=pyflows_config)
+
+    @app.step()
+    async def claim_step(ctx: StepContext, input: ClaimInput) -> ClaimOutput:
+        call_count["n"] += 1
+        return ClaimOutput(v=input.v * 2)
+
+    @app.workflow()
+    async def claim_workflow(ctx, input: ClaimInput) -> ClaimOutput:
+        return await ctx.step(claim_step, input)
+
+    await app.initialize()
+    try:
+        instance_id = await app.start(claim_workflow, ClaimInput(v=7))
+
+        # Simulate re-delivery: inject a duplicate message for the same instance.
+        await app._queue.enqueue(
+            pyflows_config.workflow_queue,
+            {"workflow_name": "claim_workflow", "instance_id": instance_id, "input": {"v": 7}},
+        )
+
+        # Both messages are visible; process_batch dequeues them concurrently.
+        processed = await app._worker.process_batch()
+        assert processed == 2
+
+        status = await app.get_status(instance_id)
+        assert status.state == WorkflowState.COMPLETED
+        assert status.output["v"] == 14
+
+        # Step ran exactly once despite two queue messages.
+        assert call_count["n"] == 1, f"step ran {call_count['n']} times — duplicate not skipped"
+    finally:
+        await app.close()
+
+
+# ---------------------------------------------------------------------------
+# Test 12 — runtime workflow composition via compose()
+# ---------------------------------------------------------------------------
+
+
+class ComposeInput(BaseModel):
+    value: int
+
+
+class ComposeOutput(BaseModel):
+    value: int
+
+
+@pytest.mark.asyncio
+async def test_runtime_compose_produces_valid_dsl(pyflows_config):
+    """compose() builds pg_durable DSL from step names registered against a real app."""
+    app = WorkflowApp(config=pyflows_config)
+
+    @app.step()
+    async def compose_double(ctx: StepContext, input: ComposeInput) -> ComposeOutput:
+        return ComposeOutput(value=input.value * 2)
+
+    @app.step()
+    async def compose_add_ten(ctx: StepContext, input: ComposeOutput) -> ComposeOutput:
+        return ComposeOutput(value=input.value + 10)
+
+    await app.initialize()
+    try:
+        exporter = SqlExporter(app.registry, "http://my-app:8000")
+        sql = exporter.compose("runtime_pipeline", ["compose_double", "compose_add_ten"])
+
+        assert "runtime_pipeline" in sql
+        assert "df.start(" in sql
+        assert "df.http(" in sql
+        assert "compose_double" in sql
+        assert "compose_add_ten" in sql
+        # step order is preserved
+        assert sql.index("compose_double") < sql.index("compose_add_ten")
+        # base_url is wired in
+        assert "my-app:8000" in sql
+
+        # unregistered step raises KeyError immediately
+        with pytest.raises(KeyError):
+            exporter.compose("bad_wf", ["compose_double", "nonexistent"])
+
+        # unsafe workflow name raises ValueError (injection guard)
+        with pytest.raises(ValueError, match="workflow_name"):
+            exporter.compose("bad'); DROP TABLE--", ["compose_double"])
+    finally:
+        await app.close()
+
+
+@pytest.mark.asyncio
+async def test_runtime_compose_steps_are_executable(pyflows_config):
+    """Steps referenced in compose() are real, runnable Python functions."""
+    app = WorkflowApp(config=pyflows_config)
+
+    @app.step()
+    async def rt_square(ctx: StepContext, input: ComposeInput) -> ComposeOutput:
+        return ComposeOutput(value=input.value ** 2)
+
+    @app.step()
+    async def rt_negate(ctx: StepContext, input: ComposeOutput) -> ComposeOutput:
+        return ComposeOutput(value=-input.value)
+
+    @app.workflow()
+    async def rt_composed_wf(ctx, input: ComposeInput) -> ComposeOutput:
+        r = await ctx.step(rt_square, input)
+        return await ctx.step(rt_negate, r)
+
+    await app.initialize()
+    try:
+        # Confirm compose() produces DSL for these steps
+        exporter = SqlExporter(app.registry, "http://localhost:8000")
+        sql = exporter.compose("rt_pipeline", ["rt_square", "rt_negate"])
+        assert "rt_square" in sql and "rt_negate" in sql
+
+        # Confirm the underlying Python steps actually execute correctly end-to-end
+        instance_id = await app.start(rt_composed_wf, ComposeInput(value=4))
+        await app.process_once()
+        status = await app.get_status(instance_id)
+        assert status.state.value == "completed"
+        assert status.output["value"] == -16  # 4² = 16, negated = -16
+    finally:
+        await app.close()

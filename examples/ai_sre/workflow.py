@@ -65,8 +65,9 @@ class IncidentReport(BaseModel):
 # --- app setup ---
 
 config = PyflowsConfig(
-    dsn="postgresql://pyflows:pyflows@localhost:5433/pyflows_test",
+    dsn="postgresql://pyflows:pyflows@127.0.0.1:5433/pyflows_test",
     otel_enabled=False,
+    db_ssl=False,
 )
 app = WorkflowApp(config=config)
 app.register_plugin(LoggingPlugin())
