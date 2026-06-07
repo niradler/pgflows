@@ -59,8 +59,9 @@ async def test_start_with_label_builds_query():
     pool, conn = _make_pool(fetchrow_return=row)
     client = PgDurableClient(pool)
     await client.start(sleep(5), label="my-label")
-    call_args = conn.fetchrow.call_args[0][0]
-    assert "'my-label'" in call_args
+    args = conn.fetchrow.call_args[0]
+    assert "$2" in args[0]          # label is a bound parameter
+    assert args[2] == "my-label"    # passed as param, not interpolated
 
 
 @pytest.mark.asyncio
@@ -70,9 +71,10 @@ async def test_start_with_label_and_database():
     pool, conn = _make_pool(fetchrow_return=row)
     client = PgDurableClient(pool)
     await client.start(sleep(1), label="lbl", database="mydb")
-    call_args = conn.fetchrow.call_args[0][0]
-    assert "'lbl'" in call_args
-    assert "'mydb'" in call_args
+    args = conn.fetchrow.call_args[0]
+    assert "$2" in args[0] and "$3" in args[0]
+    assert args[2] == "lbl"
+    assert args[3] == "mydb"
 
 
 @pytest.mark.asyncio
@@ -82,9 +84,10 @@ async def test_start_with_database_only():
     pool, conn = _make_pool(fetchrow_return=row)
     client = PgDurableClient(pool)
     await client.start(sleep(1), database="mydb")
-    call_args = conn.fetchrow.call_args[0][0]
-    assert "NULL" in call_args
-    assert "'mydb'" in call_args
+    args = conn.fetchrow.call_args[0]
+    assert "NULL" in args[0]        # literal NULL for missing label
+    assert "$2" in args[0]
+    assert args[2] == "mydb"
 
 
 # ---------------------------------------------------------------------------

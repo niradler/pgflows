@@ -30,18 +30,21 @@ class PgDurableClient:
         database: str | None = None,
     ) -> str:
         """Start a durable function. Returns the 8-char instance ID."""
-        parts = [str(node)]
-        if label:
-            parts.append(f"'{label}'")
-            if database:
-                parts.append(f"'{database}'")
-        elif database:
-            parts.append("NULL")
-            parts.append(f"'{database}'")
-        query = f"SELECT df.start({', '.join(parts)})"
+        dsl = str(node)
         async with self._pool.acquire() as conn:
-            row = await conn.fetchrow(query)
-            return row[0]
+            if label is not None and database is not None:
+                row = await conn.fetchrow(
+                    "SELECT df.start($1::text, $2, $3)", dsl, label, database
+                )
+            elif label is not None:
+                row = await conn.fetchrow("SELECT df.start($1::text, $2)", dsl, label)
+            elif database is not None:
+                row = await conn.fetchrow(
+                    "SELECT df.start($1::text, NULL, $2)", dsl, database
+                )
+            else:
+                row = await conn.fetchrow("SELECT df.start($1::text)", dsl)
+        return row[0]
 
     async def cancel(self, instance_id: str, reason: str = "Cancelled by user") -> None:
         """Cancel a running or pending durable function instance."""

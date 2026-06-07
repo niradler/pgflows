@@ -2,6 +2,13 @@ from __future__ import annotations
 
 import json
 
+_VALID_HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
+
+
+def _q(s: str) -> str:
+    """Escape a string for safe embedding in a PostgreSQL single-quoted literal."""
+    return "'" + s.replace("'", "''") + "'"
+
 
 class DslNode:
     """Represents a pg_durable DSL expression (a SQL-level TEXT value)."""
@@ -29,7 +36,7 @@ class DslNode:
 
     def capture(self, name: str) -> DslNode:
         """Capture result as named variable: (self) |=> 'name'"""
-        return DslNode(f"({self._sql}) |=> '{name}'")
+        return DslNode(f"({self._sql}) |=> {_q(name)}")
 
     def if_then(self, then: DslNode, else_: DslNode | None = None) -> DslNode:
         """Conditional: self ?> then  or  self ?> then !> else_"""
@@ -52,13 +59,15 @@ def sleep(seconds: int) -> DslNode:
 def wait_for_signal(name: str, timeout_seconds: int | None = None) -> DslNode:
     """Pause execution until the named signal arrives."""
     if timeout_seconds is not None:
-        return DslNode(f"df.wait_for_signal('{name}', {timeout_seconds})")
-    return DslNode(f"df.wait_for_signal('{name}')")
+        if not isinstance(timeout_seconds, int):
+            raise TypeError("timeout_seconds must be int")
+        return DslNode(f"df.wait_for_signal({_q(name)}, {timeout_seconds})")
+    return DslNode(f"df.wait_for_signal({_q(name)})")
 
 
 def wait_for_schedule(cron: str) -> DslNode:
     """Pause until the next tick of a cron expression."""
-    return DslNode(f"df.wait_for_schedule('{cron}')")
+    return DslNode(f"df.wait_for_schedule({_q(cron)})")
 
 
 def http(
@@ -69,10 +78,14 @@ def http(
     timeout_seconds: int = 30,
 ) -> DslNode:
     """Build a df.http() DSL node."""
-    body_arg = f"'{body}'" if body is not None else "NULL"
-    headers_arg = f"'{json.dumps(headers)}'::jsonb" if headers is not None else "NULL"
+    if method.upper() not in _VALID_HTTP_METHODS:
+        raise ValueError(f"method must be one of {_VALID_HTTP_METHODS}, got {method!r}")
+    if not isinstance(timeout_seconds, int):
+        raise TypeError("timeout_seconds must be int")
+    body_arg = _q(body) if body is not None else "NULL"
+    headers_arg = f"{_q(json.dumps(headers))}::jsonb" if headers is not None else "NULL"
     return DslNode(
-        f"df.http('{url}', '{method}', {body_arg}, {headers_arg}, {timeout_seconds})"
+        f"df.http({_q(url)}, {_q(method.upper())}, {body_arg}, {headers_arg}, {timeout_seconds})"
     )
 
 
