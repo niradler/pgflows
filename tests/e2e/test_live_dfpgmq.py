@@ -223,15 +223,12 @@ async def test_pgmq_exporter_sql_is_valid_df(live_app):
         exporter = live_app.exporter(mode="pgmq")
         sql = exporter.compose("exp_greet", ["greet"])
         await client.setvar("input", json.dumps({"name": "exp"}))
-        # Execute exactly what the exporter emits (setvar/comments + df.start).
+        # The pgmq-mode preamble is comment-only, so the exported text is a single
+        # df.start statement — run it and capture the instance id it returns.
         async with asyncpg.create_pool(_TEST_DSN, ssl=False) as pool:
             async with pool.acquire() as conn:
-                await conn.execute(sql)
-        # find the instance the exported SQL started, by label
-        instances = await client.list_instances(limit=100)
-        match = [i for i in instances if i.get("label") == "exp_greet"]
-        assert match, "exported workflow did not create an instance"
-        instance_id = match[0]["instance_id"]
+                instance_id = await conn.fetchval(sql)
+        assert instance_id, "exported SQL did not return an instance id"
         assert await _wait_status(client, instance_id) == "completed"
     finally:
         live_app._step_worker.shutdown()
