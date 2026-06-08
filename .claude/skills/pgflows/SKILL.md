@@ -20,6 +20,11 @@ await app.close()        # always call on teardown
 
 `await app.initialize()` must run before any other call. It applies pending DB migrations automatically — no manual `psql` required.
 
+`PgflowsConfig.dsn` **normalizes the URL**: SQLAlchemy/Django-style driver suffixes
+(`postgresql+psycopg://`, `postgresql+asyncpg://`) and the short `postgres://` scheme are
+rewritten to the bare `postgresql://` asyncpg needs — pass the same DSN you give your ORM,
+no manual `.replace()` dance.
+
 ## Execution Modes — Pull vs Push
 
 | Concern | Pull (Worker) | Push (pg_durable) |
@@ -42,6 +47,9 @@ async def validate_order(ctx: StepContext, inp: OrderInput) -> ValidationResult:
     ...
 
 await app.run_worker()   # blocking; use asyncio.create_task for background
+# Production: supervise the loop — transient DB drops are caught and the backends
+# re-established with exponential backoff (up to max_backoff). Stops on close()/cancel.
+await app.run_worker(reconnect=True, max_backoff=30.0)
 ```
 
 **Starting and observing a pull-mode run** — the exact signatures:

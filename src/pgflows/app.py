@@ -11,6 +11,7 @@ from pgflows.backends.pg_state import PgStateBackend
 from pgflows.backends.pgmq import PgmqBackend
 from pgflows.config import PgflowsConfig
 from pgflows.dsl import DslNode, worker_step
+from pgflows.logger import get_logger
 from pgflows.migrations import run_migrations
 from pgflows.plugins import PgflowsPlugin
 from pgflows.registry import WorkflowRegistry
@@ -23,6 +24,8 @@ from pgflows.worker import WorkflowWorker
 if TYPE_CHECKING:
     # Lazy import — PgDurableClient is only available when pg_durable is installed.
     from pgflows.pg_durable_client import PgDurableClient
+
+_log = get_logger("app")
 
 
 class WorkflowApp:
@@ -38,6 +41,7 @@ class WorkflowApp:
         self._worker: WorkflowWorker | None = None
         self._step_worker: StepWorker | None = None
         self._initialized = False
+        self._supervising = False
         self._pg_durable_available: bool = False
         self._pg_durable_client: PgDurableClient | None = None
 
@@ -195,10 +199,38 @@ class WorkflowApp:
         self._assert_initialized()
         await self._queue.drop_queue(queue)  # type: ignore[union-attr]
 
-    async def run_worker(self) -> None:
-        """Run the worker loop (blocking). Use asyncio.create_task for background."""
+    async def run_worker(self, *, reconnect: bool = False, max_backoff: float = 30.0) -> None:
+        """Run the worker loop (blocking). Use asyncio.create_task for background.
+
+        With ``reconnect=True`` the loop is supervised: a transient failure (e.g. a
+        dropped DB connection) is caught and the backends are re-established with
+        exponential backoff up to ``max_backoff`` seconds, instead of propagating and
+        killing the worker. Stops cleanly on ``await app.close()`` or task cancellation.
+        """
         self._assert_initialized()
-        await self._worker.run()  # type: ignore[union-attr]
+        if not reconnect:
+            await self._worker.run()  # type: ignore[union-attr]
+            return
+
+        self._supervising = True
+        backoff = 1.0
+        while self._supervising:
+            try:
+                await self._worker.run()  # type: ignore[union-attr]
+                return  # clean stop via close()/shutdown()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                _log.warning("worker loop stopped (%s); reconnecting in %.0fs", exc, backoff)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, max_backoff)
+                try:
+                    await self._reconnect()
+                    backoff = 1.0
+                except asyncio.CancelledError:
+                    raise
+                except Exception as reinit_exc:
+                    _log.warning("worker reconnect failed (%s); will retry", reinit_exc)
 
     async def process_once(self) -> int:
         """Process one batch of pending workflows. Useful for tests."""
@@ -265,6 +297,10 @@ class WorkflowApp:
         return await self._step_worker.process_batch()  # type: ignore[union-attr]
 
     async def close(self) -> None:
+        self._supervising = False
+        await self._teardown()
+
+    async def _teardown(self) -> None:
         if self._worker:
             self._worker.shutdown()
         if self._step_worker:
@@ -274,6 +310,11 @@ class WorkflowApp:
         if self._queue:
             await self._queue.close()
         self._initialized = False
+
+    async def _reconnect(self) -> None:
+        """Tear down pools and re-run initialize() — leaves the supervisor flag intact."""
+        await self._teardown()
+        await self.initialize()
 
     def workflow(
         self,

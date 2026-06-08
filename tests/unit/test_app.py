@@ -8,6 +8,46 @@ from pgflows.app import WorkflowApp
 from pgflows.config import PgflowsConfig
 
 
+async def test_run_worker_no_reconnect_propagates_error():
+    app = _make_app()
+    app._initialized = True
+    app._worker = AsyncMock()
+    app._worker.run = AsyncMock(side_effect=RuntimeError("connection lost"))
+
+    with pytest.raises(RuntimeError, match="connection lost"):
+        await app.run_worker()
+
+
+async def test_run_worker_reconnect_recovers_then_stops():
+    app = _make_app()
+    app._initialized = True
+    app._worker = MagicMock()
+    # Fail once (transient), then return cleanly (worker shut down).
+    app._worker.run = AsyncMock(side_effect=[RuntimeError("connection lost"), None])
+    app._reconnect = AsyncMock()
+
+    with patch("pgflows.app.asyncio.sleep", new=AsyncMock()) as sleep:
+        await app.run_worker(reconnect=True)
+
+    assert app._worker.run.await_count == 2
+    app._reconnect.assert_awaited_once()
+    sleep.assert_awaited_once()
+
+
+async def test_run_worker_reconnect_propagates_cancellation():
+    import asyncio
+
+    app = _make_app()
+    app._initialized = True
+    app._worker = MagicMock()
+    app._worker.run = AsyncMock(side_effect=asyncio.CancelledError())
+    app._reconnect = AsyncMock()
+
+    with pytest.raises(asyncio.CancelledError):
+        await app.run_worker(reconnect=True)
+    app._reconnect.assert_not_awaited()
+
+
 class GreetInput(BaseModel):
     name: str
 
