@@ -33,7 +33,22 @@ _log = get_logger("app")
 
 
 class WorkflowApp:
-    """Main entry point for the pgflows SDK."""
+    """Main entry point for the pgflows SDK.
+
+    Mental model — **pg_durable orchestrates the workflow; your Python runs the steps.**
+    A workflow is a durable graph that pg_durable drives inside Postgres (sequencing,
+    branching, parallelism, durability, replay). Your ``@app.step`` functions are the steps,
+    which pg_durable invokes via ``df.http()`` or the pgmq+NOTIFY binding (``worker_step`` +
+    a ``StepWorker``). pgmq+NOTIFY is the *step transport*, not a workflow engine.
+
+    Define a pg_durable workflow as data (``GraphSpec`` → ``start_graph``) or as Python
+    (``@app.workflow`` → ``exporter()`` to DSL).
+
+    A self-contained **pull worker** (``@app.workflow`` + ``ctx.step`` + ``run_worker``) is
+    also provided: Python orchestrates and ``pg_state`` checkpoints each step, so it needs no
+    pg_durable and suits simple/local runs. It is not a general workflow engine — for durable
+    orchestration prefer pg_durable; don't build large workflows as Python on the pull worker.
+    """
 
     def __init__(self, config: PgflowsConfig) -> None:
         self.config = config
@@ -91,6 +106,9 @@ class WorkflowApp:
         if self._pg_cron_available:
             self._scheduler = PgCronBackend(pool=self._state._pool)
             await self._scheduler.initialize()
+        else:
+            # pg_cron is optional — everything except schedule_workflow() works without it.
+            _log.info("pg_cron extension not installed — recurring scheduling disabled")
 
         self._worker = WorkflowWorker(
             registry=self.registry,
@@ -211,7 +229,12 @@ class WorkflowApp:
         await self._queue.drop_queue(queue)  # type: ignore[union-attr]
 
     async def run_worker(self, *, reconnect: bool = False, max_backoff: float = 30.0) -> None:
-        """Run the worker loop (blocking). Use asyncio.create_task for background.
+        """Run the **pull worker** loop (blocking). Use asyncio.create_task for background.
+
+        This is the self-contained Python orchestrator: it polls the pgmq *workflow* queue,
+        runs each ``@app.workflow`` function, and checkpoints steps to ``pg_state``. It does
+        not use pg_durable. For durable pg_durable-orchestrated workflows you run a
+        ``StepWorker`` (``run_step_worker``) instead — this loop is for the pull mode only.
 
         With ``reconnect=True`` the loop is supervised: a transient failure (e.g. a
         dropped DB connection) is caught and the backends are re-established with
@@ -436,6 +459,15 @@ class WorkflowApp:
         name: str | None = None,
         step_defaults: RetryConfig | None = None,
     ) -> Callable:
+        """Register a Python workflow function.
+
+        Runnable two ways: by the pull worker (``run_worker`` — Python orchestrates), or
+        exported to a pg_durable graph via ``exporter()`` (pg_durable orchestrates). For
+        durable orchestration, branching, and parallelism prefer pg_durable — either export
+        this function or define the flow as a ``GraphSpec`` (``start_graph``); the pull worker
+        is the simpler local option, not a general workflow engine.
+        """
+
         def decorator(fn: Callable) -> Callable:
             self.registry.register_workflow(fn, name=name, step_defaults=step_defaults)
             return fn

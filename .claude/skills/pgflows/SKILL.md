@@ -25,16 +25,30 @@ await app.close()        # always call on teardown
 rewritten to the bare `postgresql://` asyncpg needs — pass the same DSN you give your ORM,
 no manual `.replace()` dance.
 
-## Execution Modes — Pull vs Push
+## The model — pg_durable orchestrates, Python runs the steps
 
-| Concern | Pull (Worker) | Push (pg_durable) |
+**The canonical architecture: pg_durable manages the workflow; your Python is the steps.**
+pg_durable durably drives the graph (sequence, parallel, branch, loop) inside Postgres and
+invokes each step via `df.http()` or **pgmq+NOTIFY** (`worker_step` + a `StepWorker`).
+pgmq+NOTIFY is the *step transport* — **not** a workflow engine. Define a pg_durable
+workflow as data (`GraphSpec` → `start_graph`) or as Python (`@app.workflow` → `exporter()`).
+
+A separate **pull worker** (`@app.workflow` + `ctx.step` + `run_worker`) is the
+self-contained Python orchestrator: it polls the pgmq *workflow* queue and checkpoints steps
+to `pg_state`, needing no pg_durable. It suits simple/local runs. **Anti-pattern to avoid:**
+building a large workflow as Python `ctx.step` calls on the pull worker and treating pgmq as
+the engine — that reimplements orchestration pg_durable already provides. Use it for simple
+cases; reach for pg_durable (`GraphSpec`/export) for real durable orchestration.
+
+| Concern | Pull worker (standalone) | pg_durable (recommended) |
 |---------|--------------|-------------------|
-| Orchestrator | Python `WorkflowWorker` polling pgmq | pg_durable in Postgres |
-| Durability | Python-side checkpointing via pgmq + pg_state | pg_durable native replay |
-| Step invocation | `await ctx.step(fn, input)` in Python | `df.http()` calls FastAPI endpoint |
-| Best for | Python-heavy logic, complex branching | SQL-native workflows, cross-DB, signals |
+| Orchestrator | Python `WorkflowWorker` polling pgmq | **pg_durable in Postgres** |
+| Durability | Python checkpointing via pgmq + pg_state | pg_durable native replay |
+| Define as | `@app.workflow` Python fn | `GraphSpec` JSON, or `@app.workflow` exported to DSL |
+| Steps run via | `await ctx.step(fn, input)` in-process | `df.http()` or pgmq+NOTIFY `worker_step`/`StepWorker` |
+| Best for | simple/local, no pg_durable | durable orchestration, branching, parallelism, scheduling |
 
-**Pull mode** — define and run:
+**Pull worker** — the simpler standalone path (Python orchestrates):
 
 ```python
 @app.workflow(name="process_order")
