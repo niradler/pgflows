@@ -3,7 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>pgflows — Durable Workflow Engine for Python + Postgres</title>
+  <title>pgflows -- Durable Workflow Engine for Python + Postgres</title>
+  <!--
+    Tailwind Play CDN: SRI cannot be applied (dynamic script, generates CSS per-page class scan).
+    Accepted risk for a docs page served from GitHub Pages. For production apps use a static build.
+  -->
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/full.min.css" rel="stylesheet" type="text/css" integrity="sha384-yxrQVVFFRZdq4Z/YbeTDzSYbn1W6VnVonm2vAgnxtxUMehcccE4k2NufOz2tJnOe" crossorigin="anonymous" />
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" integrity="sha384-qX9VvWkP79m/O121ZE6sOYp0nf/pldQgtvWDbkpzi+3mUo4Wn4Ix4cFzNPay3VaB" crossorigin="anonymous"></script>
@@ -19,29 +23,29 @@
 </head>
 <body class="bg-slate-50 text-slate-900 font-sans antialiased">
 
-<!-- ========== NAV ========== -->
+<!-- NAV -->
 <nav class="navbar bg-white/95 backdrop-blur border-b border-slate-200 sticky top-0 z-50">
   <div class="max-w-6xl mx-auto w-full px-4 flex items-center justify-between">
     <a href="#top" class="text-lg font-mono font-bold tracking-tight text-slate-900">pgflows</a>
     <div class="hidden md:flex items-center gap-1">
-      <a href="#quickstart" class="btn btn-ghost btn-sm text-slate-600">Quick Start</a>
-      <a href="#architecture" class="btn btn-ghost btn-sm text-slate-600">Architecture</a>
-      <a href="#modes" class="btn btn-ghost btn-sm text-slate-600">Modes</a>
-      <a href="#dsl" class="btn btn-ghost btn-sm text-slate-600">DSL</a>
-      <a href="#config" class="btn btn-ghost btn-sm text-slate-600">Config</a>
-      <a href="#features" class="btn btn-ghost btn-sm text-slate-600">Features</a>
-      <a href="https://github.com/niradler/pgflows" class="btn btn-neutral btn-sm">GitHub →</a>
+      <a href="#quickstart"   class="btn btn-ghost btn-sm text-slate-600">Quick Start</a>
+      <a href="#steptypes"    class="btn btn-ghost btn-sm text-slate-600">Steps</a>
+      <a href="#pgmq"         class="btn btn-ghost btn-sm text-slate-600">pgmq</a>
+      <a href="#pgdurable"    class="btn btn-ghost btn-sm text-slate-600">pg_durable</a>
+      <a href="#dsl"          class="btn btn-ghost btn-sm text-slate-600">DSL</a>
+      <a href="#config"       class="btn btn-ghost btn-sm text-slate-600">Config</a>
+      <a href="https://github.com/niradler/pgflows" class="btn btn-neutral btn-sm">GitHub</a>
     </div>
   </div>
 </nav>
 
-<!-- ========== HERO ========== -->
+<!-- HERO -->
 <section id="top" class="text-slate-100 pt-20 pb-16 px-4" style="background: radial-gradient(at 20% 0%, rgba(59,130,246,0.18) 0%, transparent 50%), radial-gradient(at 90% 30%, rgba(139,92,246,0.15) 0%, transparent 50%), linear-gradient(180deg, #0f172a 0%, #1e293b 100%);">
   <div class="max-w-6xl mx-auto">
     <div class="max-w-3xl">
       <div class="inline-flex items-center gap-2 mb-6 px-3 py-1 rounded-full bg-amber-400/10 border border-amber-400/30 text-amber-300 text-xs font-mono">
         <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
-        Alpha — API stabilizing, breaking changes expected before 1.0
+        Alpha -- API stabilizing, breaking changes expected before 1.0
       </div>
       <h1 class="text-5xl font-bold mb-3 tracking-tight">
         <span class="text-blue-400">pgflows</span>
@@ -49,263 +53,132 @@
       </h1>
       <p class="text-slate-300 mb-8 text-base leading-relaxed max-w-2xl">
         Write long-running, fault-tolerant workflows as plain async Python functions backed entirely by your existing Postgres database.
-        No extra infrastructure, no separate orchestration service, no new runtime to operate.
-        All state, retries, and scheduling live in the DB.
+        No extra infrastructure, no separate orchestration service. State, retries, and scheduling all live in the DB.
       </p>
       <div class="flex flex-wrap gap-3">
         <a href="#quickstart" class="btn btn-primary btn-sm">Get started</a>
-        <a href="#modes" class="btn btn-outline btn-sm text-slate-300 border-slate-500 hover:bg-slate-700 hover:border-slate-500">Execution modes</a>
+        <a href="#steptypes"  class="btn btn-outline btn-sm text-slate-300 border-slate-500 hover:bg-slate-700 hover:border-slate-500">Step types</a>
         <a href="https://pypi.org/project/pgflows/" class="btn btn-ghost btn-sm text-slate-400">PyPI</a>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ========== FEATURE CARDS ========== -->
+<!-- FEATURES -->
 <section id="features" class="py-16 px-4 bg-white border-b border-slate-200">
   <div class="max-w-6xl mx-auto">
     <div class="text-center mb-10">
       <h2 class="text-3xl font-bold mb-3 text-slate-900">What you get</h2>
-      <p class="text-slate-500 text-sm max-w-2xl mx-auto">pgflows gives you the full lifecycle of a workflow system without adding new infrastructure to operate.</p>
+      <p class="text-slate-500 text-sm max-w-2xl mx-auto">The full lifecycle of a workflow system without adding new infrastructure to operate.</p>
     </div>
     <div class="grid md:grid-cols-3 gap-5">
       <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <div class="text-2xl mb-3">&#9654;</div>
         <h3 class="font-semibold text-slate-900 mb-1 text-sm">Checkpoint replay</h3>
-        <p class="text-slate-500 text-xs leading-relaxed">Workflows survive crashes. Completed steps are cached in Postgres and never re-executed on worker restart.</p>
+        <p class="text-slate-500 text-xs leading-relaxed">Workflows survive crashes. Completed steps are cached and never re-executed on worker restart.</p>
       </div>
       <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <div class="text-2xl mb-3">&#128274;</div>
         <h3 class="font-semibold text-slate-900 mb-1 text-sm">Typed end-to-end</h3>
-        <p class="text-slate-500 text-xs leading-relaxed">Step inputs and outputs are Pydantic models. No <code class="font-mono text-xs bg-slate-100 px-1 rounded">dict[str, Any]</code> at any boundary. Serialization goes through <code class="font-mono text-xs bg-slate-100 px-1 rounded">model_dump_json</code> / <code class="font-mono text-xs bg-slate-100 px-1 rounded">model_validate_json</code>.</p>
+        <p class="text-slate-500 text-xs leading-relaxed">Step inputs and outputs are Pydantic models. No <code class="font-mono text-xs bg-slate-100 px-1 rounded">dict[str,Any]</code> at any boundary.</p>
       </div>
       <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <div class="text-2xl mb-3">&#128260;</div>
         <h3 class="font-semibold text-slate-900 mb-1 text-sm">Two execution modes</h3>
-        <p class="text-slate-500 text-xs leading-relaxed">A Python pull worker polling pgmq, or push mode where pg_durable orchestrates the graph and calls your steps via HTTP or pgmq+NOTIFY.</p>
+        <p class="text-slate-500 text-xs leading-relaxed">Pull worker (Python orchestrates via pgmq) or push mode (pg_durable orchestrates, calls your steps via HTTP or pgmq+NOTIFY).</p>
       </div>
       <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <div class="text-2xl mb-3">&#128268;</div>
         <h3 class="font-semibold text-slate-900 mb-1 text-sm">Plugin hooks</h3>
-        <p class="text-slate-500 text-xs leading-relaxed">before_workflow, after_workflow, on_workflow_error, before_step, after_step, on_step_error. Add metrics, logging, or alerting without touching workflow code.</p>
+        <p class="text-slate-500 text-xs leading-relaxed">before_workflow, after_workflow, on_workflow_error, before_step, after_step, on_step_error. Zero changes to workflow code.</p>
       </div>
       <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <div class="text-2xl mb-3">&#9201;</div>
         <h3 class="font-semibold text-slate-900 mb-1 text-sm">Configurable retries</h3>
-        <p class="text-slate-500 text-xs leading-relaxed">Per-step <code class="font-mono text-xs bg-slate-100 px-1 rounded">RetryConfig</code> with exponential or linear backoff and optional jitter. Set defaults at the workflow level and override per step.</p>
+        <p class="text-slate-500 text-xs leading-relaxed">Per-step <code class="font-mono text-xs bg-slate-100 px-1 rounded">RetryConfig</code> with exponential or linear backoff, jitter, and per-workflow defaults.</p>
       </div>
       <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <div class="text-2xl mb-3">&#128202;</div>
         <h3 class="font-semibold text-slate-900 mb-1 text-sm">Execution history</h3>
-        <p class="text-slate-500 text-xs leading-relaxed">pg_durable records the full per-run trail. Access it as typed Pydantic models via <code class="font-mono text-xs bg-slate-100 px-1 rounded">instance_nodes</code>, <code class="font-mono text-xs bg-slate-100 px-1 rounded">instance_executions</code>, <code class="font-mono text-xs bg-slate-100 px-1 rounded">metrics</code>.</p>
+        <p class="text-slate-500 text-xs leading-relaxed">pg_durable records the full per-run trail. Typed Pydantic access via <code class="font-mono text-xs bg-slate-100 px-1 rounded">instance_nodes</code>, <code class="font-mono text-xs bg-slate-100 px-1 rounded">instance_executions</code>, <code class="font-mono text-xs bg-slate-100 px-1 rounded">metrics</code>.</p>
       </div>
       <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <div class="text-2xl mb-3">&#128336;</div>
         <h3 class="font-semibold text-slate-900 mb-1 text-sm">Cron scheduler</h3>
-        <p class="text-slate-500 text-xs leading-relaxed">Recurring workflows via <code class="font-mono text-xs bg-slate-100 px-1 rounded">PgCronBackend</code>, backed by <code class="font-mono text-xs bg-slate-100 px-1 rounded">df.wait_for_schedule</code>. No pg_cron extension required.</p>
+        <p class="text-slate-500 text-xs leading-relaxed">Recurring workflows via <code class="font-mono text-xs bg-slate-100 px-1 rounded">PgCronBackend</code>, backed by pg_durable's <code class="font-mono text-xs bg-slate-100 px-1 rounded">df.wait_for_schedule</code>. No pg_cron needed.</p>
       </div>
       <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <div class="text-2xl mb-3">&#128228;</div>
         <h3 class="font-semibold text-slate-900 mb-1 text-sm">SQL export</h3>
-        <p class="text-slate-500 text-xs leading-relaxed">Export any Python workflow to a pg_durable SQL DSL string. Deploy without code changes, compose at runtime from config, or inspect step sequences before running.</p>
+        <p class="text-slate-500 text-xs leading-relaxed">Export any Python workflow to a pg_durable SQL DSL string. Deploy without code changes or compose at runtime from config.</p>
       </div>
       <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <div class="text-2xl mb-3">&#128295;</div>
         <h3 class="font-semibold text-slate-900 mb-1 text-sm">Swappable backends</h3>
-        <p class="text-slate-500 text-xs leading-relaxed">Every infrastructure concern is behind an ABC. Swap the queue, orchestrator, or scheduler without touching a single workflow or step definition.</p>
+        <p class="text-slate-500 text-xs leading-relaxed">Every infrastructure concern lives behind an ABC. Swap queue, orchestrator, or scheduler without touching workflow code.</p>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ========== ARCHITECTURE ========== -->
-<section id="architecture" class="py-16 px-4">
-  <div class="max-w-6xl mx-auto">
-    <div class="text-center mb-10">
-      <h2 class="text-3xl font-bold mb-3 text-slate-900">Architecture</h2>
-      <p class="text-slate-500 max-w-2xl mx-auto text-sm">
-        <code class="font-mono text-xs bg-slate-100 px-1 rounded">WorkflowApp</code> is the single entry point. It wires backends, the registry, and the worker. The rest of the system only talks to ABCs defined in <code class="font-mono text-xs bg-slate-100 px-1 rounded">backends/base.py</code>.
-      </p>
-    </div>
-    <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 md:p-8">
-      <!-- Tier layout -->
-      <div class="grid md:grid-cols-3 gap-4 mb-6">
-        <!-- Entry -->
-        <div class="border-2 border-blue-500 bg-blue-50 rounded-xl p-4">
-          <div class="flex items-center justify-between mb-3">
-            <span class="text-xs font-semibold text-blue-700 uppercase tracking-widest">Entry point</span>
-            <span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">Python</span>
-          </div>
-          <div class="text-sm text-slate-700 space-y-1.5">
-            <div class="flex items-start gap-2">
-              <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-500 text-white text-[0.65rem] font-bold shrink-0 mt-0.5">1</span>
-              <span><code class="font-mono text-xs">WorkflowApp(config)</code></span>
-            </div>
-            <div class="flex items-start gap-2">
-              <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-500 text-white text-[0.65rem] font-bold shrink-0 mt-0.5">2</span>
-              <span><code class="font-mono text-xs">@app.workflow()</code> + <code class="font-mono text-xs">@app.step()</code> decorators register functions</span>
-            </div>
-            <div class="flex items-start gap-2">
-              <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-500 text-white text-[0.65rem] font-bold shrink-0 mt-0.5">3</span>
-              <span><code class="font-mono text-xs">await app.initialize()</code> opens pools + runs migrations</span>
-            </div>
-          </div>
-        </div>
-        <!-- Control -->
-        <div class="border-2 border-violet-500 bg-violet-50 rounded-xl p-4">
-          <div class="flex items-center justify-between mb-3">
-            <span class="text-xs font-semibold text-violet-700 uppercase tracking-widest">Queue layer</span>
-            <span class="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full font-medium">pgmq</span>
-          </div>
-          <div class="text-sm text-slate-700 space-y-1.5">
-            <div class="flex items-start gap-2">
-              <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-violet-500 text-white text-[0.65rem] font-bold shrink-0 mt-0.5">1</span>
-              <span><code class="font-mono text-xs">app.start(fn, input)</code> enqueues to <code class="font-mono text-xs">pgflows_workflows</code></span>
-            </div>
-            <div class="flex items-start gap-2">
-              <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-violet-500 text-white text-[0.65rem] font-bold shrink-0 mt-0.5">2</span>
-              <span>Dead-letter: failed messages archived to <code class="font-mono text-xs">pgmq.a_{queue}</code></span>
-            </div>
-            <div class="flex items-start gap-2">
-              <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-violet-500 text-white text-[0.65rem] font-bold shrink-0 mt-0.5">3</span>
-              <span>Atomic claim prevents duplicate execution across workers</span>
-            </div>
-          </div>
-        </div>
-        <!-- Runtime -->
-        <div class="border-2 border-emerald-500 bg-emerald-50 rounded-xl p-4">
-          <div class="flex items-center justify-between mb-3">
-            <span class="text-xs font-semibold text-emerald-700 uppercase tracking-widest">State</span>
-            <span class="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">Postgres</span>
-          </div>
-          <div class="text-sm text-slate-700 space-y-1.5">
-            <div class="flex items-start gap-2">
-              <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500 text-white text-[0.65rem] font-bold shrink-0 mt-0.5">1</span>
-              <span>Step results checkpointed before next step runs</span>
-            </div>
-            <div class="flex items-start gap-2">
-              <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500 text-white text-[0.65rem] font-bold shrink-0 mt-0.5">2</span>
-              <span>Completed steps replayed from cache on restart</span>
-            </div>
-            <div class="flex items-start gap-2">
-              <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500 text-white text-[0.65rem] font-bold shrink-0 mt-0.5">3</span>
-              <span>Migrations applied automatically by <code class="font-mono text-xs">initialize()</code></span>
-            </div>
-          </div>
-        </div>
-      </div>
-      <!-- Flow diagram -->
-      <div class="relative border border-slate-200 rounded-xl bg-white p-3" data-diagram>
-        <button class="absolute top-2 right-2 inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 text-xs font-semibold border border-slate-200 transition-colors" data-expand data-title="Execution Flow">&#10530; Expand</button>
-        <div class="mermaid">
-flowchart LR
-  A[User Code] -->|app.start| Q[(pgmq queue)]
-  Q -->|poll| W[WorkflowWorker]
-  W -->|ctx.step| C[WorkflowContext]
-  C -->|checkpoint| DB[(PgStateBackend)]
-  DB -->|replay| C
-  C -->|run| S[Step Function]
-  S -->|result| DB
-  DB -->|output| A2[app.get_status]
-        </div>
-      </div>
-      <!-- Module table -->
-      <div class="mt-6 overflow-x-auto rounded-xl bg-white border border-slate-200 shadow-sm">
-        <table class="w-full text-sm">
-          <thead class="bg-slate-50 text-slate-600">
-            <tr>
-              <th class="text-left py-2.5 px-4 font-semibold">Module</th>
-              <th class="text-left py-2.5 px-4 font-semibold">Responsibility</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-100">
-            <tr><td class="py-2.5 px-4 font-mono text-xs text-blue-700">app.py</td><td class="py-2.5 px-4 text-slate-600 text-xs">Wiring only. Assembles backends, registry, worker.</td></tr>
-            <tr><td class="py-2.5 px-4 font-mono text-xs text-blue-700">context.py</td><td class="py-2.5 px-4 text-slate-600 text-xs">Step execution + checkpoint replay logic.</td></tr>
-            <tr><td class="py-2.5 px-4 font-mono text-xs text-blue-700">worker.py</td><td class="py-2.5 px-4 text-slate-600 text-xs">Workflow queue polling and dispatch loop.</td></tr>
-            <tr><td class="py-2.5 px-4 font-mono text-xs text-blue-700">step_worker.py</td><td class="py-2.5 px-4 text-slate-600 text-xs">pgmq+NOTIFY step consumer for push mode. Runs Python steps, signals results to pg_durable.</td></tr>
-            <tr><td class="py-2.5 px-4 font-mono text-xs text-blue-700">registry.py</td><td class="py-2.5 px-4 text-slate-600 text-xs">Decorator registration and type extraction.</td></tr>
-            <tr><td class="py-2.5 px-4 font-mono text-xs text-blue-700">backends/</td><td class="py-2.5 px-4 text-slate-600 text-xs">All I/O (DB, queue, scheduler). Never imported directly outside app.py and tests.</td></tr>
-            <tr><td class="py-2.5 px-4 font-mono text-xs text-blue-700">dsl.py</td><td class="py-2.5 px-4 text-slate-600 text-xs">Python DSL builders for pg_durable operators.</td></tr>
-            <tr><td class="py-2.5 px-4 font-mono text-xs text-blue-700">sql_exporter.py</td><td class="py-2.5 px-4 text-slate-600 text-xs">AST-based export of Python workflow to pg_durable SQL.</td></tr>
-            <tr><td class="py-2.5 px-4 font-mono text-xs text-blue-700">fastapi_integration.py</td><td class="py-2.5 px-4 text-slate-600 text-xs">FastAPI router for push-mode HTTP step endpoints.</td></tr>
-            <tr><td class="py-2.5 px-4 font-mono text-xs text-blue-700">pg_durable_client.py</td><td class="py-2.5 px-4 text-slate-600 text-xs">High-level client for pg_durable operations (start, signal, cancel, history).</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ========== QUICK START ========== -->
-<section id="quickstart" class="py-16 px-4 bg-white border-y border-slate-200">
+<!-- QUICK START -->
+<section id="quickstart" class="py-16 px-4 bg-white border-b border-slate-200">
   <div class="max-w-6xl mx-auto">
     <div class="text-center mb-10">
       <h2 class="text-3xl font-bold mb-3 text-slate-900">Quick Start</h2>
       <p class="text-slate-500 max-w-2xl mx-auto text-sm">Docker Compose + one import + two decorators is the full getting-started story.</p>
     </div>
     <div class="grid md:grid-cols-2 gap-6 mb-6">
-      <!-- Install -->
       <div>
         <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">1. Install</div>
         <div class="bg-slate-900 text-slate-200 rounded-xl p-4 font-mono text-xs leading-relaxed overflow-x-auto">
-          <div class="flex gap-2 whitespace-pre"><span class="text-slate-500 select-none shrink-0">$</span><span class="text-slate-100">uv add pgflows</span></div>
-          <div class="flex gap-2 whitespace-pre mt-2"><span class="text-slate-500 select-none shrink-0">#</span><span class="text-slate-400">or pip install pgflows</span></div>
-          <div class="flex gap-2 whitespace-pre mt-2"><span class="text-slate-500 select-none shrink-0">#</span><span class="text-slate-400">FastAPI push-mode endpoints:</span></div>
-          <div class="flex gap-2 whitespace-pre"><span class="text-slate-500 select-none shrink-0">$</span><span class="text-slate-100">uv sync --extra fastapi</span></div>
+          <div class="flex gap-2 whitespace-pre"><span class="text-slate-500 select-none shrink-0">$</span><span>uv add pgflows</span></div>
+          <div class="flex gap-2 whitespace-pre mt-1"><span class="text-slate-500 select-none shrink-0">#</span><span class="text-slate-400">FastAPI push-mode endpoints:</span></div>
+          <div class="flex gap-2 whitespace-pre"><span class="text-slate-500 select-none shrink-0">$</span><span>uv sync --extra fastapi</span></div>
         </div>
       </div>
-      <!-- Start Postgres -->
       <div>
         <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">2. Start Postgres (pgmq + pg_durable pre-installed)</div>
         <div class="bg-slate-900 text-slate-200 rounded-xl p-4 font-mono text-xs leading-relaxed overflow-x-auto">
-          <div class="flex gap-2 whitespace-pre"><span class="text-slate-500 select-none shrink-0">$</span><span class="text-slate-100">docker compose up -d</span></div>
-          <div class="flex gap-2 whitespace-pre mt-2"><span class="text-slate-500 select-none shrink-0">#</span><span class="text-slate-400">or pull the pre-built image:</span></div>
-          <div class="flex gap-2 whitespace-pre"><span class="text-slate-500 select-none shrink-0">$</span><span class="text-slate-100">docker pull niradler/pgflows-postgres:17-1.5.1-0.2.2</span></div>
+          <div class="flex gap-2 whitespace-pre"><span class="text-slate-500 select-none shrink-0">$</span><span>docker compose up -d</span></div>
+          <div class="flex gap-2 whitespace-pre mt-1"><span class="text-slate-500 select-none shrink-0">#</span><span class="text-slate-400">or pull directly:</span></div>
+          <div class="flex gap-2 whitespace-pre"><span class="text-slate-500 select-none shrink-0">$</span><span>docker pull niradler/pgflows-postgres:17-1.5.1-0.2.2</span></div>
         </div>
       </div>
     </div>
-    <!-- Code example -->
     <div>
-      <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">3. Write your first workflow</div>
+      <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">3. First workflow</div>
       <pre><code class="language-python">import asyncio
 from pydantic import BaseModel
 from pgflows import PgflowsConfig, RetryConfig, StepContext, WorkflowApp, WorkflowContext
 
-config = PgflowsConfig(
+app = WorkflowApp(config=PgflowsConfig(
     dsn="postgresql://pgflows:pgflows@127.0.0.1:5433/pgflows_test",
-    otel_enabled=False,
-    db_ssl=False,
-)
-app = WorkflowApp(config=config)
-
+    otel_enabled=False, db_ssl=False,
+))
 
 class OrderInput(BaseModel):
     order_id: str
     amount: float
 
-
 class OrderResult(BaseModel):
     charged: bool
     confirmation: str
 
-
 @app.step(retry=RetryConfig(max_retries=3, initial_delay_seconds=1.0))
 async def charge_payment(ctx: StepContext, input: OrderInput) -> OrderResult:
-    # call your payment API here
     return OrderResult(charged=True, confirmation=f"CHG-{input.order_id}")
-
 
 @app.workflow()
 async def process_order(ctx: WorkflowContext, input: OrderInput) -> OrderResult:
     return await ctx.step(charge_payment, input)
 
-
 async def main() -> None:
-    await app.initialize()                                            # runs migrations, opens pools
+    await app.initialize()                                        # migrations + pools
     iid = await app.start(process_order, OrderInput(order_id="ORD-1", amount=99.0))
-    await app.process_once()                                          # pump one poll batch
+    await app.process_once()                                      # pump one poll batch
     status = await app.get_status(iid)
-    print(status.state, status.output)                                # COMPLETED OrderResult(...)
+    print(status.state, status.output)                            # COMPLETED OrderResult(...)
     await app.close()
 
 asyncio.run(main())</code></pre>
@@ -313,226 +186,632 @@ asyncio.run(main())</code></pre>
   </div>
 </section>
 
-<!-- ========== EXECUTION MODES ========== -->
-<section id="modes" class="py-16 px-4">
+<!-- STEP TYPES -->
+<section id="steptypes" class="py-16 px-4">
   <div class="max-w-6xl mx-auto">
     <div class="text-center mb-10">
-      <h2 class="text-3xl font-bold mb-3 text-slate-900">Execution Modes</h2>
-      <p class="text-slate-500 max-w-2xl mx-auto text-sm">pgflows supports two distinct orchestration models. Choose one per workflow; step definitions are shared between both.</p>
+      <h2 class="text-3xl font-bold mb-3 text-slate-900">Step Types</h2>
+      <p class="text-slate-500 max-w-2xl mx-auto text-sm">pgflows supports five distinct step kinds. Workflow and step functions are defined the same way across both execution modes; what changes is how pg_durable or the Python worker invokes them.</p>
     </div>
 
-    <!-- Comparison table -->
-    <div class="overflow-x-auto rounded-xl bg-white border border-slate-200 shadow-sm mb-8">
-      <table class="w-full text-sm">
-        <thead class="bg-slate-50 text-slate-600">
-          <tr>
-            <th class="text-left py-3 px-4 font-semibold">Concern</th>
-            <th class="text-left py-3 px-4 font-semibold text-blue-700">Pull (Worker)</th>
-            <th class="text-left py-3 px-4 font-semibold text-violet-700">Push (pg_durable)</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-slate-100">
-          <tr>
-            <td class="py-3 px-4 font-semibold text-slate-700">Orchestrator</td>
-            <td class="py-3 px-4 text-slate-600">Python <code class="font-mono text-xs bg-slate-100 px-1 rounded">WorkflowWorker</code> polling pgmq</td>
-            <td class="py-3 px-4 text-slate-600">pg_durable in Postgres (<code class="font-mono text-xs bg-slate-100 px-1 rounded">df</code> extension)</td>
-          </tr>
-          <tr>
-            <td class="py-3 px-4 font-semibold text-slate-700">Durability</td>
-            <td class="py-3 px-4 text-slate-600">Python-side checkpointing via pgmq + PgStateBackend</td>
-            <td class="py-3 px-4 text-slate-600">pg_durable native replay, graph stored in DB</td>
-          </tr>
-          <tr>
-            <td class="py-3 px-4 font-semibold text-slate-700">Step invocation</td>
-            <td class="py-3 px-4 text-slate-600"><code class="font-mono text-xs bg-slate-100 px-1 rounded">await ctx.step(fn, input)</code> in Python</td>
-            <td class="py-3 px-4 text-slate-600"><code class="font-mono text-xs bg-slate-100 px-1 rounded">df.http()</code> to FastAPI, or pgmq+NOTIFY to StepWorker</td>
-          </tr>
-          <tr>
-            <td class="py-3 px-4 font-semibold text-slate-700">Parallelism</td>
-            <td class="py-3 px-4 text-slate-600">Sequential within a workflow by default</td>
-            <td class="py-3 px-4 text-slate-600">Native <code class="font-mono text-xs bg-slate-100 px-1 rounded">&amp;</code> (join), <code class="font-mono text-xs bg-slate-100 px-1 rounded">|</code> (race) graph operators</td>
-          </tr>
-          <tr>
-            <td class="py-3 px-4 font-semibold text-slate-700">Best for</td>
-            <td class="py-3 px-4 text-slate-600">Python-heavy logic, complex branching, quick setup</td>
-            <td class="py-3 px-4 text-slate-600">SQL-native graphs, cross-DB, signals, scheduled flows</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <!-- 5-card grid -->
+    <div class="grid md:grid-cols-1 gap-6">
 
-    <!-- Tabs: Pull vs Push -->
-    <div role="tablist" class="tabs tabs-lifted tabs-lg">
-      <!-- Pull Worker -->
-      <input type="radio" name="modes_tabs" role="tab" class="tab !text-slate-700 [--tab-bg:white] [--tab-border-color:#e2e8f0]" aria-label="Pull Worker" checked />
-      <div role="tabpanel" class="tab-content bg-white border-slate-200 rounded-box p-6">
-        <div class="grid md:grid-cols-2 gap-6">
+      <!-- 1. @app.step() -->
+      <div class="rounded-2xl border-2 border-blue-200 bg-white shadow-sm overflow-hidden">
+        <div class="flex items-center gap-3 px-6 py-4 bg-blue-50 border-b border-blue-100">
+          <span class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-blue-500 text-white font-bold text-sm shrink-0">1</span>
           <div>
-            <h3 class="font-semibold text-slate-900 mb-3 text-sm uppercase tracking-wider">Pull mode: Python orchestrates</h3>
-            <pre><code class="language-python">@app.workflow(name="process_order")
-async def process_order(ctx: WorkflowContext, inp: OrderInput) -> None:
-    result = await ctx.step(validate_order, inp)
-    await ctx.step(charge_card, ChargeInput(order_id=result.order_id))
-
-@app.step()
-async def validate_order(ctx: StepContext, inp: OrderInput) -> ValidationResult:
-    ...
-
-# Start + observe
-iid = await app.start(process_order, OrderInput(...))   # pass the FUNCTION
-await app.process_once()                                # pump one batch
-status = await app.get_status(iid)
-if status.state is WorkflowState.COMPLETED:
-    out = MyOutput.model_validate(status.output)
-
-# Blocking worker loop (use asyncio.create_task for background)
-await app.run_worker()</code></pre>
+            <div class="font-bold text-slate-900">Python Step (<code class="font-mono text-sm">@app.step()</code>)</div>
+            <div class="text-xs text-slate-500">Pull mode -- checkpointed execution</div>
           </div>
-          <div class="space-y-3">
-            <div class="rounded-lg border-l-4 border-blue-500 bg-blue-50 p-4 flex items-start gap-3">
-              <div class="text-blue-600 text-xl">&#8505;</div>
-              <div>
-                <div class="font-semibold text-blue-900 text-sm">WorkflowState is UPPERCASE</div>
-                <div class="text-sm text-blue-900/70"><code class="font-mono text-xs">WorkflowState.COMPLETED</code>, <code class="font-mono text-xs">PENDING</code>, <code class="font-mono text-xs">RUNNING</code>, <code class="font-mono text-xs">FAILED</code>, <code class="font-mono text-xs">CANCELLED</code>, <code class="font-mono text-xs">SUSPENDED</code>. Different from <code class="font-mono text-xs">PgDurableClient.status()</code> which returns lowercase strings.</div>
-              </div>
-            </div>
-            <div class="rounded-lg border-l-4 border-blue-500 bg-blue-50 p-4 flex items-start gap-3">
-              <div class="text-blue-600 text-xl">&#8505;</div>
-              <div>
-                <div class="font-semibold text-blue-900 text-sm">Pass the function, not a string</div>
-                <div class="text-sm text-blue-900/70"><code class="font-mono text-xs">app.start(process_order, inp)</code> takes the function object. Passing a string raises <code class="font-mono text-xs">AttributeError</code>.</div>
-              </div>
-            </div>
-            <div class="rounded-lg border-l-4 border-emerald-500 bg-emerald-50 p-4 flex items-start gap-3">
-              <div class="text-emerald-600 text-xl">&#10003;</div>
-              <div>
-                <div class="font-semibold text-emerald-900 text-sm">Dead-letter included</div>
-                <div class="text-sm text-emerald-900/70">Failed workflows are archived to <code class="font-mono text-xs">pgmq.a_{queue}</code> instead of being requeued forever.</div>
-              </div>
-            </div>
+        </div>
+        <div class="grid md:grid-cols-2 gap-6 p-6">
+          <div>
+            <p class="text-sm text-slate-600 mb-4">
+              A regular async Python function registered with <code class="font-mono text-xs bg-slate-100 px-1 rounded">@app.step()</code>.
+              Called via <code class="font-mono text-xs bg-slate-100 px-1 rounded">await ctx.step(fn, input)</code> inside a workflow.
+              Its result is persisted to Postgres before the next step runs, making the workflow idempotent: if the worker crashes and restarts,
+              the step is not re-executed -- the cached result is returned immediately.
+            </p>
+            <ul class="text-xs text-slate-600 space-y-1.5">
+              <li class="flex gap-2"><span class="text-blue-500 shrink-0">+</span><span>Signature: <code class="font-mono bg-slate-100 px-1 rounded">(StepContext, InputModel) -&gt; OutputModel</code></span></li>
+              <li class="flex gap-2"><span class="text-blue-500 shrink-0">+</span><span>Per-step <code class="font-mono bg-slate-100 px-1 rounded">RetryConfig</code> with exponential/linear backoff</span></li>
+              <li class="flex gap-2"><span class="text-blue-500 shrink-0">+</span><span>Optional <code class="font-mono bg-slate-100 px-1 rounded">timeout_seconds</code> per step</span></li>
+              <li class="flex gap-2"><span class="text-blue-500 shrink-0">+</span><span>Plugin hooks fire before/after each execution (not on replay)</span></li>
+            </ul>
+          </div>
+          <div>
+            <pre><code class="language-python">from pgflows import RetryConfig, StepContext
+
+@app.step(
+    name="charge_payment",          # optional, defaults to fn name
+    retry=RetryConfig(
+        max_retries=3,
+        backoff="exponential",
+        initial_delay_seconds=1.0,
+    ),
+    timeout_seconds=30.0,
+)
+async def charge_payment(ctx: StepContext, inp: OrderInput) -> OrderResult:
+    # ctx.instance_id, ctx.step_name, ctx.attempt available
+    result = await payment_api.charge(inp.order_id, inp.amount)
+    return OrderResult(charged=True, confirmation=result.id)</code></pre>
           </div>
         </div>
       </div>
 
-      <!-- Push Mode -->
-      <input type="radio" name="modes_tabs" role="tab" class="tab !text-slate-700 [--tab-bg:white] [--tab-border-color:#e2e8f0]" aria-label="Push Mode (pg_durable)" />
-      <div role="tabpanel" class="tab-content bg-white border-slate-200 rounded-box p-6">
-        <div class="grid md:grid-cols-2 gap-6">
+      <!-- 2. @app.workflow() -->
+      <div class="rounded-2xl border-2 border-violet-200 bg-white shadow-sm overflow-hidden">
+        <div class="flex items-center gap-3 px-6 py-4 bg-violet-50 border-b border-violet-100">
+          <span class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-violet-500 text-white font-bold text-sm shrink-0">2</span>
           <div>
-            <h3 class="font-semibold text-slate-900 mb-3 text-sm uppercase tracking-wider">Push mode: pg_durable orchestrates</h3>
+            <div class="font-bold text-slate-900">Workflow Function (<code class="font-mono text-sm">@app.workflow()</code>)</div>
+            <div class="text-xs text-slate-500">Pull mode -- the durable unit of work</div>
+          </div>
+        </div>
+        <div class="grid md:grid-cols-2 gap-6 p-6">
+          <div>
+            <p class="text-sm text-slate-600 mb-4">
+              The workflow function is the top-level orchestrator. It calls steps via <code class="font-mono text-xs bg-slate-100 px-1 rounded">await ctx.step(fn, input)</code>,
+              which checkpoints each result. The workflow itself is the durable unit: it is enqueued to pgmq, a worker picks it up,
+              and executes it in full (replaying completed steps from cache). Return a <code class="font-mono text-xs bg-slate-100 px-1 rounded">BaseModel</code>
+              to populate <code class="font-mono text-xs bg-slate-100 px-1 rounded">get_status().output</code>.
+            </p>
+            <ul class="text-xs text-slate-600 space-y-1.5">
+              <li class="flex gap-2"><span class="text-violet-500 shrink-0">+</span><span>Signature: <code class="font-mono bg-slate-100 px-1 rounded">(WorkflowContext, InputModel) -&gt; OutputModel | None</code></span></li>
+              <li class="flex gap-2"><span class="text-violet-500 shrink-0">+</span><span>Any async Python logic is valid inside a workflow (if-else, loops, etc.)</span></li>
+              <li class="flex gap-2"><span class="text-violet-500 shrink-0">+</span><span><code class="font-mono bg-slate-100 px-1 rounded">step_defaults=RetryConfig(...)</code> applies to all steps</span></li>
+              <li class="flex gap-2"><span class="text-violet-500 shrink-0">+</span><span>Started via <code class="font-mono bg-slate-100 px-1 rounded">app.start(fn_object, input)</code> -- pass the function, not a string</span></li>
+            </ul>
+          </div>
+          <div>
+            <pre><code class="language-python">from pgflows import WorkflowContext, WorkflowState
+
+@app.workflow(
+    name="process_order",
+    step_defaults=RetryConfig(max_retries=2),
+)
+async def process_order(ctx: WorkflowContext, inp: OrderInput) -> OrderResult:
+    validation = await ctx.step(validate_order, inp)
+    if not validation.ok:
+        return OrderResult(charged=False, confirmation="REJECTED")
+    charge = await ctx.step(charge_payment, inp)
+    await ctx.step(send_confirmation, charge)
+    return charge
+
+# Start and observe
+iid = await app.start(process_order, OrderInput(...))
+await app.process_once()
+status = await app.get_status(iid)
+if status.state is WorkflowState.COMPLETED:
+    result = OrderResult.model_validate(status.output)</code></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. df.http() step -->
+      <div class="rounded-2xl border-2 border-emerald-200 bg-white shadow-sm overflow-hidden">
+        <div class="flex items-center gap-3 px-6 py-4 bg-emerald-50 border-b border-emerald-100">
+          <span class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-500 text-white font-bold text-sm shrink-0">3</span>
+          <div>
+            <div class="font-bold text-slate-900">HTTP Step (<code class="font-mono text-sm">df.http()</code> via FastAPI)</div>
+            <div class="text-xs text-slate-500">Push mode -- pg_durable calls your endpoint</div>
+          </div>
+        </div>
+        <div class="grid md:grid-cols-2 gap-6 p-6">
+          <div>
+            <p class="text-sm text-slate-600 mb-4">
+              In push mode, pg_durable is the orchestrator. It calls your Python step via HTTP using <code class="font-mono text-xs bg-slate-100 px-1 rounded">df.http()</code>.
+              The pgflows FastAPI router registers one POST endpoint per <code class="font-mono text-xs bg-slate-100 px-1 rounded">@app.step()</code> function at
+              <code class="font-mono text-xs bg-slate-100 px-1 rounded">/pgflows/steps/{step_name}</code>.
+              pg_durable passes the step input as the JSON body and the instance ID via the
+              <code class="font-mono text-xs bg-slate-100 px-1 rounded">X-DF-Instance-ID</code> header.
+            </p>
+            <ul class="text-xs text-slate-600 space-y-1.5">
+              <li class="flex gap-2"><span class="text-emerald-500 shrink-0">+</span><span>Same <code class="font-mono bg-slate-100 px-1 rounded">@app.step()</code> function, no extra code needed</span></li>
+              <li class="flex gap-2"><span class="text-emerald-500 shrink-0">+</span><span>pg_durable durably retries the HTTP call on failure</span></li>
+              <li class="flex gap-2"><span class="text-emerald-500 shrink-0">+</span><span>Graph operators (<code class="font-mono bg-slate-100 px-1 rounded">&amp;</code>, <code class="font-mono bg-slate-100 px-1 rounded">|</code>, <code class="font-mono bg-slate-100 px-1 rounded">|=&gt;</code>) apply to HTTP steps</span></li>
+              <li class="flex gap-2"><span class="text-amber-500 shrink-0">!</span><span>Requires an inbound HTTP server; use pgmq binding if no server available</span></li>
+            </ul>
+          </div>
+          <div>
             <pre><code class="language-python">from pgflows.fastapi_integration import create_pgflows_router
 
-# Mount FastAPI step endpoints (df.http() calls these)
+# Mount once -- registers /pgflows/steps/{name} for every @app.step()
 router = create_pgflows_router(app, prefix="/pgflows")
 fastapi_app.include_router(router)
 
-# pgmq+NOTIFY binding (no inbound HTTP needed)
+# Compose a graph using http() DSL builder
+from pgflows import http
+node = (
+    http(f"{BASE_URL}/pgflows/steps/validate_order",
+         body='{"order_id":"ORD-1","amount":99.0}',
+         headers={"Content-Type": "application/json",
+                  "X-DF-Instance-ID": "{sys_instance_id}"})
+    .capture("v")
+    >> http(f"{BASE_URL}/pgflows/steps/charge_payment",
+            body='{"order_id":"ORD-1","amount":99.0}',
+            headers={"Content-Type": "application/json"})
+)
+iid = await app.pg_durable.start(node, label="order")</code></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. worker_step (pgmq+NOTIFY) -->
+      <div class="rounded-2xl border-2 border-amber-200 bg-white shadow-sm overflow-hidden">
+        <div class="flex items-center gap-3 px-6 py-4 bg-amber-50 border-b border-amber-100">
+          <span class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-amber-500 text-white font-bold text-sm shrink-0">4</span>
+          <div>
+            <div class="font-bold text-slate-900">pgmq+NOTIFY Step (<code class="font-mono text-sm">app.worker_step()</code>)</div>
+            <div class="text-xs text-slate-500">Push mode -- no inbound HTTP server needed</div>
+          </div>
+        </div>
+        <div class="grid md:grid-cols-2 gap-6 p-6">
+          <div>
+            <p class="text-sm text-slate-600 mb-4">
+              An alternative push-mode binding: pg_durable sends the step to a pgmq queue and fires a
+              <code class="font-mono text-xs bg-slate-100 px-1 rounded">pg_notify</code>. A Python <code class="font-mono text-xs bg-slate-100 px-1 rounded">StepWorker</code>
+              (started with <code class="font-mono text-xs bg-slate-100 px-1 rounded">app.run_step_worker()</code>) reads the message, runs the step,
+              and writes the result to <code class="font-mono text-xs bg-slate-100 px-1 rounded">pgflows.worker_step_results</code>.
+              pg_durable polls that table (race-free) rather than using <code class="font-mono text-xs bg-slate-100 px-1 rounded">df.wait_for_signal</code>.
+            </p>
+            <ul class="text-xs text-slate-600 space-y-1.5">
+              <li class="flex gap-2"><span class="text-amber-500 shrink-0">+</span><span>No inbound HTTP server required -- pure outbound connections</span></li>
+              <li class="flex gap-2"><span class="text-amber-500 shrink-0">+</span><span>Use <code class="font-mono bg-slate-100 px-1 rounded">app.worker_step()</code> not bare <code class="font-mono bg-slate-100 px-1 rounded">worker_step()</code> to bind app config</span></li>
+              <li class="flex gap-2"><span class="text-amber-500 shrink-0">+</span><span>Thread data between steps via <code class="font-mono bg-slate-100 px-1 rounded">capture=</code> / <code class="font-mono bg-slate-100 px-1 rounded">input_expr="$cap::jsonb"</code></span></li>
+              <li class="flex gap-2"><span class="text-amber-500 shrink-0">+</span><span>Parallel joins of worker_step branches resolve reliably</span></li>
+            </ul>
+          </div>
+          <div>
+            <pre><code class="language-python">import asyncio
+
+# Build a pipeline: double_it -> add_ten (passing result via capture)
 node = (
     app.worker_step("double_it", capture="d")
     >> app.worker_step("add_ten", input_expr="$d::jsonb", capture="r")
 )
-asyncio.create_task(app.run_step_worker())   # drain queue in background
+
+# First step reads from the "input" durable variable
+await app.pg_durable.setvar("input", '{"n": 4}')
+
+# Start the StepWorker to drain the queue
+asyncio.create_task(app.run_step_worker())
+
 iid = await app.pg_durable.start(node, label="pipeline")
 
-# Use http() for direct HTTP step calls
-from pgflows import http
-node = (
-    http(f"{base_url}/pgflows/steps/validate_order",
-         body='{"order_id":"ORD-1"}',
-         headers={"Content-Type": "application/json"})
-    .capture("v")
-    >> http(f"{base_url}/pgflows/steps/charge_card",
-            input_expr="$v::jsonb")
-)</code></pre>
+# Wait and read result
+status = await app.pg_durable.status(iid)   # 'completed'
+result = await app.pg_durable.result(iid)   # {"rows":[{"result":28}]}</code></pre>
           </div>
-          <div class="space-y-3">
-            <div class="rounded-lg border-l-4 border-amber-500 bg-amber-50 p-4 flex items-start gap-3">
-              <div class="text-amber-600 text-xl">&#9888;</div>
-              <div>
-                <div class="font-semibold text-amber-900 text-sm">Use app.worker_step(), not worker_step()</div>
-                <div class="text-sm text-amber-900/70">The bare <code class="font-mono text-xs">worker_step()</code> builder hardcodes queue name <code class="font-mono text-xs">pgflows_steps</code>. If you rename the queue in config, it silently enqueues to a queue no worker drains and the instance hangs.</div>
-              </div>
+        </div>
+      </div>
+
+      <!-- 5. sql_node -->
+      <div class="rounded-2xl border-2 border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div class="flex items-center gap-3 px-6 py-4 bg-slate-50 border-b border-slate-100">
+          <span class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-slate-500 text-white font-bold text-sm shrink-0">5</span>
+          <div>
+            <div class="font-bold text-slate-900">SQL Node (<code class="font-mono text-sm">sql_node()</code>)</div>
+            <div class="text-xs text-slate-500">Push mode -- pure SQL, no Python</div>
+          </div>
+        </div>
+        <div class="grid md:grid-cols-2 gap-6 p-6">
+          <div>
+            <p class="text-sm text-slate-600 mb-4">
+              A <code class="font-mono text-xs bg-slate-100 px-1 rounded">sql_node()</code> wraps a raw SQL statement that pg_durable executes directly.
+              No Python code runs -- the query is evaluated inside Postgres. The first column of the first row is the node's result,
+              capturable via <code class="font-mono text-xs bg-slate-100 px-1 rounded">.capture("name")</code>.
+              Write single quotes naturally (<code class="font-mono text-xs bg-slate-100 px-1 rounded">WHERE status = 'pending'</code>);
+              the builder doubles them for the SQL-literal layer automatically.
+            </p>
+            <ul class="text-xs text-slate-600 space-y-1.5">
+              <li class="flex gap-2"><span class="text-slate-500 shrink-0">+</span><span>No Python process needed -- runs entirely in Postgres</span></li>
+              <li class="flex gap-2"><span class="text-slate-500 shrink-0">+</span><span>Composable with all DSL operators (<code class="font-mono bg-slate-100 px-1 rounded">&gt;&gt;</code>, <code class="font-mono bg-slate-100 px-1 rounded">&amp;</code>, <code class="font-mono bg-slate-100 px-1 rounded">|=&gt;</code>, etc.)</span></li>
+              <li class="flex gap-2"><span class="text-slate-500 shrink-0">+</span><span>Can read/write any table in the same database</span></li>
+              <li class="flex gap-2"><span class="text-red-500 shrink-0">!</span><span>Joins of trivial SQL nodes may hang on the bundled pg_durable build; prefer worker_step branches for joins</span></li>
+            </ul>
+          </div>
+          <div>
+            <pre><code class="language-python">from pgflows import sql_node
+
+# Simple audit write after a step completes
+node = (
+    app.worker_step("process_data", capture="r")
+    >> sql_node("INSERT INTO audit(result) SELECT result FROM pgflows.worker_step_results WHERE id = (SELECT max(id) FROM pgflows.worker_step_results)")
+)
+
+# Capture a count and branch on it
+check = sql_node("SELECT count(*) FROM orders WHERE status = 'pending'").capture("n")
+node = check >> sql_node("SELECT 'has_work'").if_then(
+    sql_node("SELECT 1"),   # count > 0: process
+    sql_node("SELECT 0"),   # count = 0: skip
+)
+
+iid = await app.pg_durable.start(node, label="check")</code></pre>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- end step grid -->
+  </div>
+</section>
+
+<!-- PGMQ DEEP DIVE -->
+<section id="pgmq" class="py-16 px-4 bg-white border-y border-slate-200">
+  <div class="max-w-6xl mx-auto">
+    <div class="text-center mb-10">
+      <h2 class="text-3xl font-bold mb-3 text-slate-900">pgmq: How It Works</h2>
+      <p class="text-slate-500 max-w-2xl mx-auto text-sm">pgmq (by Tembo) implements Postgres-native message queues as regular tables. pgflows uses it for two independent concerns: workflow dispatch in pull mode and step dispatch in push mode.</p>
+    </div>
+
+    <!-- What is pgmq -->
+    <div class="rounded-2xl border border-slate-200 bg-white shadow-sm p-6 md:p-8 mb-6">
+      <h3 class="text-lg font-bold text-slate-900 mb-4">Message lifecycle</h3>
+      <div class="grid md:grid-cols-2 gap-6 mb-6">
+        <div>
+          <p class="text-sm text-slate-600 mb-4">
+            Each queue is backed by a table <code class="font-mono text-xs bg-slate-100 px-1 rounded">pgmq.q_{queue_name}</code>.
+            Messages are JSON payloads with a unique message ID and a visibility timeout (VT) lock.
+          </p>
+          <ul class="text-sm text-slate-600 space-y-2">
+            <li class="flex gap-2 items-start">
+              <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-500 text-white text-xs font-bold shrink-0 mt-0.5">1</span>
+              <span><strong>send</strong> -- message lands in the queue, immediately visible</span>
+            </li>
+            <li class="flex gap-2 items-start">
+              <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-500 text-white text-xs font-bold shrink-0 mt-0.5">2</span>
+              <span><strong>read (with VT)</strong> -- message becomes invisible to other readers for VT seconds. One reader gets it; concurrent readers skip it.</span>
+            </li>
+            <li class="flex gap-2 items-start">
+              <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-500 text-white text-xs font-bold shrink-0 mt-0.5">3a</span>
+              <span><strong>delete (ack)</strong> -- message is permanently removed. pgflows does this on success.</span>
+            </li>
+            <li class="flex gap-2 items-start">
+              <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-amber-500 text-white text-xs font-bold shrink-0 mt-0.5">3b</span>
+              <span><strong>archive (dead-letter)</strong> -- message moves to <code class="font-mono text-xs bg-slate-100 px-1 rounded">pgmq.a_{queue}</code>. pgflows does this on failure.</span>
+            </li>
+            <li class="flex gap-2 items-start">
+              <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-500 text-white text-xs font-bold shrink-0 mt-0.5">3c</span>
+              <span><strong>VT expires</strong> -- if neither delete nor archive happens within VT seconds, the message becomes visible again for re-delivery.</span>
+            </li>
+          </ul>
+        </div>
+        <div class="relative border border-slate-200 rounded-xl bg-white p-3" data-diagram>
+          <button class="absolute top-2 right-2 inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-semibold border border-slate-200 transition-colors" data-expand data-title="pgmq message lifecycle">&#10530; Expand</button>
+          <div class="mermaid">
+stateDiagram-v2
+  [*] --> Visible: pgmq.send
+  Visible --> Locked: pgmq.read (VT starts)
+  Locked --> Deleted: pgmq.delete (success)
+  Locked --> Archived: pgmq.archive (dead-letter)
+  Locked --> Visible: VT expires (re-delivery)
+  Deleted --> [*]
+  Archived --> [*]
+          </div>
+        </div>
+      </div>
+
+      <h3 class="text-lg font-bold text-slate-900 mb-4">The two queues pgflows uses</h3>
+      <div class="grid md:grid-cols-2 gap-4 mb-6">
+        <div class="rounded-xl border border-blue-100 bg-blue-50 p-4">
+          <div class="text-xs font-semibold text-blue-700 uppercase tracking-wider mb-2">Workflow queue (pull mode)</div>
+          <div class="text-xs text-slate-700 space-y-1.5">
+            <div>Queue: <code class="font-mono bg-white px-1 rounded">pgflows_workflows</code></div>
+            <div>VT config: <code class="font-mono bg-white px-1 rounded">workflow_visibility_timeout_seconds</code></div>
+            <div class="pt-1 space-y-1">
+              <div><strong>send:</strong> <code class="font-mono bg-white px-1 rounded">app.start(fn, input)</code> enqueues the workflow</div>
+              <div><strong>read:</strong> WorkflowWorker polls, gets exclusive lock via VT</div>
+              <div><strong>claim:</strong> atomic <code class="font-mono bg-white px-1 rounded">pending → running</code> prevents duplicate processing when multiple workers race</div>
+              <div><strong>delete:</strong> workflow completes successfully</div>
+              <div><strong>archive:</strong> workflow fails after all retries exhausted</div>
             </div>
-            <div class="rounded-lg border-l-4 border-amber-500 bg-amber-50 p-4 flex items-start gap-3">
-              <div class="text-amber-600 text-xl">&#9888;</div>
-              <div>
-                <div class="font-semibold text-amber-900 text-sm">Thread data with captures, not setvar</div>
-                <div class="text-sm text-amber-900/70">With more than one durable var set, pg_durable serializes the snapshot with non-deterministic key order. A parallel join replay then fails. Use one config var and pass everything else via <code class="font-mono text-xs">capture=</code> / <code class="font-mono text-xs">input_expr="$cap::jsonb"</code>.</div>
-              </div>
-            </div>
-            <div class="rounded-lg border-l-4 border-blue-500 bg-blue-50 p-4 flex items-start gap-3">
-              <div class="text-blue-600 text-xl">&#8505;</div>
-              <div>
-                <div class="font-semibold text-blue-900 text-sm">Needs both extensions in one DB</div>
-                <div class="text-sm text-blue-900/70">The default compose image ships only pgmq. Build the push-mode test image for both: <code class="font-mono text-xs">docker build -t pgflows-e2e-dfpgmq:latest tests/e2e/docker</code></div>
-              </div>
+          </div>
+        </div>
+        <div class="rounded-xl border border-amber-100 bg-amber-50 p-4">
+          <div class="text-xs font-semibold text-amber-700 uppercase tracking-wider mb-2">Step queue (push mode)</div>
+          <div class="text-xs text-slate-700 space-y-1.5">
+            <div>Queue: <code class="font-mono bg-white px-1 rounded">pgflows_steps</code></div>
+            <div>NOTIFY channel: <code class="font-mono bg-white px-1 rounded">pgflows_steps</code></div>
+            <div>VT config: <code class="font-mono bg-white px-1 rounded">step_visibility_timeout_seconds</code></div>
+            <div class="pt-1 space-y-1">
+              <div><strong>send:</strong> pg_durable calls <code class="font-mono bg-white px-1 rounded">pgmq.send</code> when reaching a worker_step node</div>
+              <div><strong>notify:</strong> <code class="font-mono bg-white px-1 rounded">pg_notify</code> wakes the StepWorker immediately</div>
+              <div><strong>execute:</strong> StepWorker reads, runs the Python step</div>
+              <div><strong>result:</strong> writes to <code class="font-mono bg-white px-1 rounded">pgflows.worker_step_results</code> (race-free)</div>
+              <div><strong>poll:</strong> pg_durable polls the results table until the row appears</div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- pgmq: How it works -->
-      <input type="radio" name="modes_tabs" role="tab" class="tab !text-slate-700 [--tab-bg:white] [--tab-border-color:#e2e8f0]" aria-label="pgmq Internals" />
-      <div role="tabpanel" class="tab-content bg-white border-slate-200 rounded-box p-6">
-        <div class="mb-4">
-          <h3 class="font-semibold text-slate-900 mb-3 text-sm uppercase tracking-wider">How pgmq is used</h3>
-          <p class="text-slate-500 text-sm mb-4">pgflows uses pgmq for two independent concerns: workflow dispatch (pull mode) and step dispatch in push mode. The SDK shares a single asyncpg connection pool across both.</p>
+      <h3 class="text-lg font-bold text-slate-900 mb-4">Why poll a results table instead of df.wait_for_signal?</h3>
+      <p class="text-sm text-slate-600 mb-4">
+        A NOTIFY-woken StepWorker can signal back to pg_durable <em>before</em> pg_durable has registered the waiter for that instance node.
+        That signal is dropped and the instance hangs forever. The poll table is race-free: the result row persists until pg_durable reads it,
+        regardless of timing.
+      </p>
+
+      <h3 class="text-lg font-bold text-slate-900 mb-4">Operations (SQL -- useful for debugging and ops)</h3>
+      <pre><code class="language-sql">-- List all queues and their sizes
+SELECT * FROM pgmq.list_queues();
+
+-- Queue depth and oldest message age
+SELECT * FROM pgmq.metrics('pgflows_workflows');
+SELECT * FROM pgmq.metrics('pgflows_steps');
+
+-- Inspect dead-lettered workflow messages
+SELECT msg_id, message, archived_at
+FROM pgmq.a_pgflows_workflows
+ORDER BY archived_at DESC
+LIMIT 20;
+
+-- Peek at queued messages without locking them
+SELECT msg_id, message, enqueued_at
+FROM pgmq.q_pgflows_workflows
+ORDER BY enqueued_at
+LIMIT 10;
+
+-- Drain a stuck step queue (drops all messages -- use with care)
+SELECT pgmq.purge_queue('pgflows_steps');
+
+-- Inspect step results table
+SELECT * FROM pgflows.worker_step_results ORDER BY created_at DESC LIMIT 20;</code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- PG_DURABLE DEEP DIVE -->
+<section id="pgdurable" class="py-16 px-4">
+  <div class="max-w-6xl mx-auto">
+    <div class="text-center mb-10">
+      <h2 class="text-3xl font-bold mb-3 text-slate-900">pg_durable: Graph Execution, History &amp; Parallelism</h2>
+      <p class="text-slate-500 max-w-2xl mx-auto text-sm">
+        pg_durable (by Microsoft, prefix <code class="font-mono text-xs bg-slate-100 px-1 rounded">df.</code>) is a Postgres extension that implements durable, graph-based workflow orchestration entirely inside the database.
+        It stores the full execution graph, runs it node by node (or in parallel), and records the complete history.
+      </p>
+    </div>
+
+    <!-- How it works -->
+    <div class="rounded-2xl border border-slate-200 bg-white shadow-sm p-6 md:p-8 mb-6">
+      <h3 class="text-lg font-bold text-slate-900 mb-4">How pg_durable executes a workflow</h3>
+      <div class="grid md:grid-cols-2 gap-6 mb-6">
+        <div>
+          <p class="text-sm text-slate-600 mb-3">
+            When you call <code class="font-mono text-xs bg-slate-100 px-1 rounded">df.start(dsl_expr, label)</code>, pg_durable:
+          </p>
+          <ol class="text-sm text-slate-600 space-y-2">
+            <li class="flex gap-2 items-start">
+              <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-violet-500 text-white text-xs font-bold shrink-0 mt-0.5">1</span>
+              <span>Parses the DSL expression into an execution graph and stores it in <code class="font-mono text-xs bg-slate-100 px-1 rounded">df.instances</code> with status <code class="font-mono text-xs bg-slate-100 px-1 rounded">pending</code>.</span>
+            </li>
+            <li class="flex gap-2 items-start">
+              <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-violet-500 text-white text-xs font-bold shrink-0 mt-0.5">2</span>
+              <span>The executor picks up the instance and starts executing nodes. Status becomes <code class="font-mono text-xs bg-slate-100 px-1 rounded">running</code>.</span>
+            </li>
+            <li class="flex gap-2 items-start">
+              <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-violet-500 text-white text-xs font-bold shrink-0 mt-0.5">3</span>
+              <span>Each node's result is recorded in <code class="font-mono text-xs bg-slate-100 px-1 rounded">df.instance_nodes</code>. Structural nodes (THEN, JOIN, IF) each get their own row.</span>
+            </li>
+            <li class="flex gap-2 items-start">
+              <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-violet-500 text-white text-xs font-bold shrink-0 mt-0.5">4</span>
+              <span>For <code class="font-mono text-xs bg-slate-100 px-1 rounded">&amp;</code> (join), both branches are dispatched concurrently. The executor waits for ALL to reach <code class="font-mono text-xs bg-slate-100 px-1 rounded">completed</code> before advancing.</span>
+            </li>
+            <li class="flex gap-2 items-start">
+              <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-violet-500 text-white text-xs font-bold shrink-0 mt-0.5">5</span>
+              <span>If the executor or process restarts, it replays from the last completed node. Already-completed nodes return their cached result instantly.</span>
+            </li>
+          </ol>
         </div>
         <div class="relative border border-slate-200 rounded-xl bg-white p-3" data-diagram>
-          <button class="absolute top-2 right-2 inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 text-xs font-semibold border border-slate-200 transition-colors" data-expand data-title="pgmq message flow">&#10530; Expand</button>
+          <button class="absolute top-2 right-2 inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-semibold border border-slate-200 transition-colors" data-expand data-title="pg_durable execution model">&#10530; Expand</button>
           <div class="mermaid">
-sequenceDiagram
-  participant A as User Code
-  participant Q as pgmq queue
-  participant W as WorkflowWorker
-  participant C as WorkflowContext
-  participant DB as PgStateBackend
-  A->>Q: pgmq.send (workflow message)
-  W->>Q: pgmq.read (poll batch)
-  Q-->>W: message + payload
-  W->>C: execute workflow fn
-  C->>DB: checkpoint step result
-  DB-->>C: cached result (on replay)
-  W->>Q: pgmq.delete (ack)
-  W->>Q: pgmq.archive (on failure)
+flowchart TD
+  A[df.start DSL] --> B[Parse graph, store in df.instances]
+  B --> C[Executor picks up instance]
+  C --> D{Node type?}
+  D -->|sequence ~&gt;| E[Run left, then right]
+  D -->|join &| F[Dispatch both branches concurrently]
+  F --> G[Wait for ALL to complete]
+  G --> H[Advance past join]
+  D -->|conditional ?&gt;/!&gt;| I[Evaluate, pick branch]
+  D -->|loop @&gt;| J[Re-enter body until break]
+  E --> K[Record in df.instance_nodes]
+  H --> K
+  I --> K
+  J --> K
+  K --> L{More nodes?}
+  L -->|yes| D
+  L -->|no| M[Instance completed]
           </div>
         </div>
-        <div class="mt-4 grid md:grid-cols-2 gap-4">
-          <div class="rounded-lg bg-slate-50 border border-slate-200 p-4 text-sm">
-            <div class="font-semibold text-slate-700 mb-2 text-xs uppercase tracking-wider">Workflow queue (pull mode)</div>
-            <ul class="text-slate-600 space-y-1 text-xs">
-              <li>Queue name: <code class="font-mono">pgflows_workflows</code> (configurable)</li>
-              <li>Visibility timeout: <code class="font-mono">workflow_visibility_timeout_seconds</code></li>
-              <li>Failed messages archived to <code class="font-mono">pgmq.a_{queue}</code></li>
-              <li>Atomic <code class="font-mono">pending→running</code> claim prevents races</li>
-            </ul>
+      </div>
+
+      <!-- Parallelism -->
+      <h3 class="text-lg font-bold text-slate-900 mb-4">Parallelism with <code class="font-mono text-sm">&amp;</code> (join) and <code class="font-mono text-sm">|</code> (race)</h3>
+      <div class="grid md:grid-cols-2 gap-6 mb-4">
+        <div>
+          <div class="text-xs font-semibold text-emerald-700 uppercase tracking-wider mb-2">Join (&amp;) -- wait for ALL</div>
+          <p class="text-sm text-slate-600 mb-3">Both branches run concurrently as independent sub-graphs. The join node advances only when every branch has status <code class="font-mono text-xs bg-slate-100 px-1 rounded">completed</code>. Captures made inside branches are available after the join.</p>
+          <pre><code class="language-python"># Fan out: run both steps in parallel, then continue
+node = (
+    (
+        app.worker_step("fetch_users", capture="u")
+        &amp; app.worker_step("fetch_orders", capture="o")
+    )
+    >> sql_node("INSERT INTO audit VALUES (now())")
+)
+# $u and $o are both available after the join</code></pre>
+        </div>
+        <div>
+          <div class="text-xs font-semibold text-amber-700 uppercase tracking-wider mb-2">Race (|) -- first wins</div>
+          <p class="text-sm text-slate-600 mb-3">Both branches start. The first to complete provides the result; the other continues running but its result is ignored. <strong>Race does not cancel the loser</strong> and is reliable only as a terminal node (do not sequence after a race).</p>
+          <pre><code class="language-python"># Race two data sources -- first to respond wins
+# NOTE: only use | as a terminal node
+node = (
+    sql_node("SELECT data FROM fast_cache WHERE key = 'x'")
+    | sql_node("SELECT data FROM slow_store WHERE key = 'x'")
+)
+# Good: terminal. Bad: node >> next_step (hangs)</code></pre>
+        </div>
+      </div>
+      <div class="rounded-lg border-l-4 border-amber-500 bg-amber-50 p-4 flex items-start gap-3 mb-4">
+        <div class="text-amber-600 text-xl">&#9888;</div>
+        <div>
+          <div class="font-semibold text-amber-900 text-sm">Parallelism caveats (bundled pg_durable build)</div>
+          <div class="text-sm text-amber-900/70">
+            Joins of <em>trivial bare-SQL</em> branches (<code class="font-mono text-xs">sql_node("SELECT 1") &amp; sql_node("SELECT 2")</code>) can hang on the bundled build (branches complete, JOIN stays running). Joins of <code class="font-mono text-xs">worker_step</code> branches resolve reliably. Also: a loop cannot share an instance with a parallel node (ContinueAsNew deadlock) -- put the loop-drain and the parallel checks in separate <code class="font-mono text-xs">df.start</code> instances.
           </div>
-          <div class="rounded-lg bg-slate-50 border border-slate-200 p-4 text-sm">
-            <div class="font-semibold text-slate-700 mb-2 text-xs uppercase tracking-wider">Step queue (push mode)</div>
-            <ul class="text-slate-600 space-y-1 text-xs">
-              <li>Queue name: <code class="font-mono">pgflows_steps</code> (configurable)</li>
-              <li>NOTIFY channel: <code class="font-mono">pgflows_steps</code></li>
-              <li>StepWorker drains via <code class="font-mono">app.run_step_worker()</code></li>
-              <li>Results written to <code class="font-mono">pgflows.worker_step_results</code> (poll-based, race-free)</li>
-            </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Execution history -->
+    <div class="rounded-2xl border border-slate-200 bg-white shadow-sm p-6 md:p-8 mb-6">
+      <h3 class="text-lg font-bold text-slate-900 mb-4">Execution history</h3>
+      <p class="text-sm text-slate-600 mb-4">pg_durable records the full per-run trail in the database. pgflows exposes it as typed Pydantic models via <code class="font-mono text-xs bg-slate-100 px-1 rounded">PgDurableClient</code>.</p>
+      <div class="grid md:grid-cols-2 gap-6">
+        <div>
+          <pre><code class="language-python">client = app.pg_durable   # requires app.pg_durable_available
+
+# High-level instance metadata
+info = await client.instance_info(iid)
+# InstanceInfo fields:
+#   label, function, status, output, created_at, updated_at
+
+# Per-node execution trail
+nodes = await client.instance_nodes(iid)
+# list[InstanceNode] -- one row per graph node, including
+# structural THEN/JOIN/IF rows the extension inserts.
+# Fields: node_type, query, result_name, status, result, updated_at
+for n in nodes:
+    print(n.node_type, n.status, n.result)
+
+# Timing and event counts
+execs = await client.instance_executions(iid)
+# list[ExecutionRecord]
+# Fields: status (Title-case "Completed"), duration_ms, event_count
+for e in execs:
+    print(e.status, e.duration_ms, e.event_count)
+
+# Cluster-wide counters
+m = await client.metrics()
+# Metrics fields: total, running, completed, failed, cancelled</code></pre>
+        </div>
+        <div>
+          <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">SQL -- direct inspection</div>
+          <pre><code class="language-sql">-- All running instances
+SELECT * FROM df.list_instances('running');
+
+-- Full node trail for one instance
+SELECT * FROM df.instance_nodes('inst-id-here');
+-- Returns structural rows: THEN, JOIN, IF, LOOP in addition
+-- to your actual node rows. More rows than nodes you wrote.
+
+-- Instance execution log (timing + events)
+SELECT * FROM df.instance_executions('inst-id-here');
+
+-- Cancel a stale running instance
+SELECT df.cancel('inst-id-here', 'reason');
+
+-- Cluster metrics
+SELECT * FROM df.metrics();</code></pre>
+          <div class="mt-3 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Status values</div>
+          <div class="overflow-x-auto rounded-xl bg-white border border-slate-200 shadow-sm">
+            <table class="w-full text-xs">
+              <thead class="bg-slate-50 text-slate-600"><tr><th class="py-2 px-3 text-left font-semibold">API</th><th class="py-2 px-3 text-left font-semibold">Value</th><th class="py-2 px-3 text-left font-semibold">Type</th></tr></thead>
+              <tbody class="divide-y divide-slate-100">
+                <tr><td class="py-2 px-3 font-mono text-violet-700">client.status(iid)</td><td class="py-2 px-3">'completed', 'failed', 'running', ...</td><td class="py-2 px-3 text-slate-500">lowercase string</td></tr>
+                <tr><td class="py-2 px-3 font-mono text-violet-700">app.get_status(iid).state</td><td class="py-2 px-3">WorkflowState.COMPLETED, .FAILED, ...</td><td class="py-2 px-3 text-slate-500">UPPERCASE enum</td></tr>
+                <tr><td class="py-2 px-3 font-mono text-violet-700">ExecutionRecord.status</td><td class="py-2 px-3">"Completed", "Failed", ...</td><td class="py-2 px-3 text-slate-500">Title-case string</td></tr>
+              </tbody>
+            </table>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Signals and control flow -->
+    <div class="rounded-2xl border border-slate-200 bg-white shadow-sm p-6 md:p-8">
+      <h3 class="text-lg font-bold text-slate-900 mb-4">Signals, loops, and conditional branching</h3>
+      <div class="grid md:grid-cols-3 gap-6">
+        <div>
+          <div class="text-xs font-semibold text-blue-700 uppercase tracking-wider mb-2">Signals -- external event coordination</div>
+          <p class="text-xs text-slate-600 mb-3">Suspend an instance until an external event (human approval, webhook, another service) sends a signal. The captured result is the full envelope; read your payload under <code class="font-mono text-xs bg-slate-100 px-1 rounded">-&gt;'data'</code>.</p>
+          <pre><code class="language-python">from pgflows import wait_for_signal
+
+# Build the graph: wait then branch on approval
+decision = wait_for_signal("approval").capture("d")
+node = decision >> sql_node(
+    # $d::jsonb->'data'->>'approved' is your payload field
+    "SELECT ($d::jsonb->'data'->>'approved')::boolean"
+).capture("ok")
+
+iid = await app.pg_durable.start(node, label="approval-flow")
+
+# From another process: send the signal
+await app.pg_durable.signal(
+    iid, "approval", {"approved": True}
+)</code></pre>
+        </div>
+        <div>
+          <div class="text-xs font-semibold text-violet-700 uppercase tracking-wider mb-2">Loops -- poll until done</div>
+          <p class="text-xs text-slate-600 mb-3">Infinite loop with <code class="font-mono text-xs bg-slate-100 px-1 rounded">loop(body)</code>, while-loop with <code class="font-mono text-xs bg-slate-100 px-1 rounded">loop(body, cond)</code>. Exit with <code class="font-mono text-xs bg-slate-100 px-1 rounded">break_()</code> inside an <code class="font-mono text-xs bg-slate-100 px-1 rounded">if_rows</code> check.</p>
+          <pre><code class="language-python">from pgflows import loop, break_, if_rows, sql_node
+
+# Poll a table until a row appears
+body = (
+    sql_node("SELECT id FROM jobs WHERE status='done' LIMIT 1")
+    .capture("job")
+    >> if_rows("job",
+        break_(),                            # found: exit loop
+        sql_node("SELECT df.sleep(5)"),      # not found: wait
+    )
+)
+node = loop(body)
+
+# Do NOT put a parallel node in the same instance as a loop --
+# run them as separate df.start() calls to avoid deadlock.</code></pre>
+        </div>
+        <div>
+          <div class="text-xs font-semibold text-emerald-700 uppercase tracking-wider mb-2">Conditional branching</div>
+          <p class="text-xs text-slate-600 mb-3">Branch on the result of any node using <code class="font-mono text-xs bg-slate-100 px-1 rounded">.if_then(true_branch, else_branch)</code> or the standalone <code class="font-mono text-xs bg-slate-100 px-1 rounded">if_node()</code> / <code class="font-mono text-xs bg-slate-100 px-1 rounded">if_rows()</code>.</p>
+          <pre><code class="language-python">from pgflows import if_node, if_rows, sql_node
+
+# Branch on whether a SQL query returns rows
+check = sql_node(
+    "SELECT id FROM orders WHERE status = 'pending' LIMIT 1"
+).capture("pending")
+
+node = check >> if_rows(
+    "pending",
+    app.worker_step("process_order"),   # has rows
+    sql_node("SELECT 'nothing to do'"), # no rows
+)
+
+# Branch on a boolean expression
+flag = sql_node("SELECT count(*) > 0 FROM flags WHERE name='ff'")
+node = if_node(
+    flag,
+    app.worker_step("new_path"),
+    app.worker_step("old_path"),
+)</code></pre>
         </div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ========== DSL BUILDERS ========== -->
+<!-- DSL BUILDERS -->
 <section id="dsl" class="py-16 px-4 bg-white border-y border-slate-200">
   <div class="max-w-6xl mx-auto">
     <div class="text-center mb-10">
-      <h2 class="text-3xl font-bold mb-3 text-slate-900">DSL Builders</h2>
+      <h2 class="text-3xl font-bold mb-3 text-slate-900">DSL Reference</h2>
       <p class="text-slate-500 max-w-2xl mx-auto text-sm">
-        Python builders that mirror pg_durable SQL operators. Import from <code class="font-mono text-xs bg-slate-100 px-1 rounded">pgflows</code>. Compose with Python operators (<code class="font-mono text-xs bg-slate-100 px-1 rounded">&gt;&gt;</code>, <code class="font-mono text-xs bg-slate-100 px-1 rounded">&amp;</code>, <code class="font-mono text-xs bg-slate-100 px-1 rounded">|</code>), then pass the result to <code class="font-mono text-xs bg-slate-100 px-1 rounded">app.pg_durable.start()</code>.
+        Python builders that mirror pg_durable SQL operators. Import from <code class="font-mono text-xs bg-slate-100 px-1 rounded">pgflows</code>. Compose with <code class="font-mono text-xs bg-slate-100 px-1 rounded">&gt;&gt;</code>, <code class="font-mono text-xs bg-slate-100 px-1 rounded">&amp;</code>, <code class="font-mono text-xs bg-slate-100 px-1 rounded">|</code>, then pass to <code class="font-mono text-xs bg-slate-100 px-1 rounded">app.pg_durable.start()</code>.
       </p>
     </div>
-
-    <!-- DSL table -->
     <div class="overflow-x-auto rounded-xl bg-white border border-slate-200 shadow-sm mb-8">
       <table class="w-full text-sm">
         <thead class="bg-slate-50 text-slate-600">
@@ -544,598 +823,258 @@ sequenceDiagram
         </thead>
         <tbody class="divide-y divide-slate-100">
           <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">a &gt;&gt; b</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">a ~&gt; b</td><td class="py-2.5 px-4 text-slate-600 text-xs">Sequence: run b after a completes</td></tr>
-          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">a &amp; b</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">a &amp; b</td><td class="py-2.5 px-4 text-slate-600 text-xs">Parallel join: run both, wait for ALL to complete</td></tr>
-          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">a | b</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">a | b</td><td class="py-2.5 px-4 text-slate-600 text-xs">Race: first to complete wins. Reliable only as a terminal node (does not cancel loser)</td></tr>
-          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">node.capture("x")</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">node |=&gt; 'x'</td><td class="py-2.5 px-4 text-slate-600 text-xs">Capture node's first-column result as <code class="font-mono text-xs">$x</code> for downstream use</td></tr>
-          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">node.if_then(t, e)</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">node ?&gt; t !&gt; e</td><td class="py-2.5 px-4 text-slate-600 text-xs">Conditional: branch on node's result</td></tr>
-          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">sql_node("SELECT 1")</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">'SELECT 1'</td><td class="py-2.5 px-4 text-slate-600 text-xs">Wrap raw SQL (auto-escapes single quotes for the SQL-literal layer)</td></tr>
-          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">sleep(30)</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">df.sleep(30)</td><td class="py-2.5 px-4 text-slate-600 text-xs">Sleep for N seconds</td></tr>
-          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">wait_for_signal("ok")</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">df.wait_for_signal('ok')</td><td class="py-2.5 px-4 text-slate-600 text-xs">Suspend until signal arrives. Captured result is the full <code class="font-mono text-xs">{signal_name, timed_out, data}</code> envelope; read payload under <code class="font-mono text-xs">-&gt;'data'</code></td></tr>
-          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">wait_for_schedule("0 * * * *")</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">df.wait_for_schedule('0 * * * *')</td><td class="py-2.5 px-4 text-slate-600 text-xs">Suspend until the next cron tick</td></tr>
-          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">loop(body)</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">@&gt; (body)</td><td class="py-2.5 px-4 text-slate-600 text-xs">Infinite loop. Combine with <code class="font-mono text-xs">break_()</code> to exit</td></tr>
+          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">a &amp; b</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">a &amp; b</td><td class="py-2.5 px-4 text-slate-600 text-xs">Parallel join: run both, wait for ALL. Always parenthesize: <code class="font-mono text-xs">(a &amp; b) &gt;&gt; c</code></td></tr>
+          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">a | b</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">a | b</td><td class="py-2.5 px-4 text-slate-600 text-xs">Race: first wins. Terminal only -- does not cancel loser</td></tr>
+          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">node.capture("x")</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">node |=&gt; 'x'</td><td class="py-2.5 px-4 text-slate-600 text-xs">Save first-column result as <code class="font-mono text-xs">$x</code> for downstream nodes</td></tr>
+          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">node.if_then(t, e)</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">node ?&gt; t !&gt; e</td><td class="py-2.5 px-4 text-slate-600 text-xs">Conditional branch on node result</td></tr>
+          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">sql_node("SELECT ...")</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">'SELECT ...'</td><td class="py-2.5 px-4 text-slate-600 text-xs">Raw SQL node. Write single quotes naturally -- builder escapes them</td></tr>
+          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">sleep(30)</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">df.sleep(30)</td><td class="py-2.5 px-4 text-slate-600 text-xs">Durably sleep N seconds</td></tr>
+          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">wait_for_signal("name")</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">df.wait_for_signal('name')</td><td class="py-2.5 px-4 text-slate-600 text-xs">Suspend until signal. Captured result is <code class="font-mono text-xs">{signal_name, timed_out, data}</code> -- read payload under <code class="font-mono text-xs">-&gt;'data'</code></td></tr>
+          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">wait_for_schedule("0 * * * *")</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">df.wait_for_schedule('...')</td><td class="py-2.5 px-4 text-slate-600 text-xs">Suspend until next cron tick</td></tr>
+          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">loop(body)</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">@&gt; (body)</td><td class="py-2.5 px-4 text-slate-600 text-xs">Infinite loop. Exit with <code class="font-mono text-xs">break_()</code></td></tr>
           <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">loop(body, cond)</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">df.loop(body, cond)</td><td class="py-2.5 px-4 text-slate-600 text-xs">While-loop: repeat while condition holds</td></tr>
-          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">break_()</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">df.break()</td><td class="py-2.5 px-4 text-slate-600 text-xs">Exit the enclosing loop</td></tr>
-          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">if_node(cond, t, e)</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">cond ?&gt; t !&gt; e</td><td class="py-2.5 px-4 text-slate-600 text-xs">Conditional branch as a standalone node</td></tr>
-          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">if_rows("x", t, e)</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">df.if_rows('x', t, e)</td><td class="py-2.5 px-4 text-slate-600 text-xs">Branch on whether capture <code class="font-mono text-xs">$x</code> has rows</td></tr>
+          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">break_()</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">df.break()</td><td class="py-2.5 px-4 text-slate-600 text-xs">Exit enclosing loop</td></tr>
+          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">if_node(cond, t, e)</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">cond ?&gt; t !&gt; e</td><td class="py-2.5 px-4 text-slate-600 text-xs">Standalone conditional</td></tr>
+          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">if_rows("cap", t, e)</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">df.if_rows('cap', t, e)</td><td class="py-2.5 px-4 text-slate-600 text-xs">Branch on whether capture <code class="font-mono text-xs">$cap</code> has rows</td></tr>
           <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">join3(a, b, c)</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">df.join3(a, b, c)</td><td class="py-2.5 px-4 text-slate-600 text-xs">Three-way parallel join</td></tr>
-          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">http(url, method, body, headers)</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">df.http(...)</td><td class="py-2.5 px-4 text-slate-600 text-xs">HTTP step call. <code class="font-mono text-xs">headers</code> is a dict (not JSON string). Include <code class="font-mono text-xs">Content-Type: application/json</code>.</td></tr>
-          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">app.worker_step("name", ...)</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">pgmq.send ~&gt; pg_notify ~&gt; poll ~&gt; read</td><td class="py-2.5 px-4 text-slate-600 text-xs">Run a Python step via pgmq+NOTIFY, poll result table. Use <code class="font-mono text-xs">app.worker_step</code> (not bare <code class="font-mono text-xs">worker_step</code>) to bind app config.</td></tr>
+          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">http(url, method, body, headers)</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">df.http(...)</td><td class="py-2.5 px-4 text-slate-600 text-xs"><code class="font-mono text-xs">headers</code> is a dict. Include <code class="font-mono text-xs">Content-Type: application/json</code></td></tr>
+          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">app.worker_step("name")</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">pgmq.send ~&gt; notify ~&gt; poll</td><td class="py-2.5 px-4 text-slate-600 text-xs">pgmq+NOTIFY step unit. Use <code class="font-mono text-xs">app.worker_step</code> to bind app config</td></tr>
         </tbody>
       </table>
-    </div>
-
-    <!-- DSL example -->
-    <div class="grid md:grid-cols-2 gap-6">
-      <div>
-        <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Composing a graph</div>
-        <pre><code class="language-python">from pgflows import sql_node, sleep, wait_for_signal, loop, break_, if_rows
-
-# Sequence: validate then charge
-node = sql_node("SELECT 1") >> sql_node("SELECT 2")
-
-# Parallel fan-out then continue
-node = (
-    sql_node("SELECT count(*) FROM users").capture("u")
-    &amp; sql_node("SELECT count(*) FROM orders").capture("o")
-) >> sql_node("INSERT INTO audit(msg) VALUES ('done')")
-
-# Wait for external signal then branch
-decision = wait_for_signal("approval").capture("d")
-node = decision >> if_rows(
-    "d",
-    sql_node("SELECT 'approved'"),
-    sql_node("SELECT 'rejected'"),
-)
-
-# Pass the composed node to pg_durable
-iid = await app.pg_durable.start(node, label="my-graph")</code></pre>
-      </div>
-      <div>
-        <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">worker_step pipeline (pgmq+NOTIFY)</div>
-        <pre><code class="language-python"># Prefer app.worker_step() over bare worker_step()
-node = (
-    app.worker_step("double_it", capture="d")
-    >> app.worker_step("add_ten", input_expr="$d::jsonb", capture="r")
-)
-
-# First step needs its input seeded before start:
-await app.pg_durable.setvar("input", '{"n": 4}')
-iid = await app.pg_durable.start(node, label="pipeline")
-
-# Run the step consumer
-asyncio.create_task(app.run_step_worker())
-
-# Read the result
-status = await app.pg_durable.status(iid)  # 'completed'
-result = await app.pg_durable.result(iid)  # parsed JSON</code></pre>
-        <div class="mt-3 rounded-lg border-l-4 border-amber-500 bg-amber-50 p-3 flex items-start gap-2">
-          <div class="text-amber-600 text-lg">&#9888;</div>
-          <div class="text-xs text-amber-900/80">Write single quotes naturally in <code class="font-mono text-xs">sql_node()</code> (<code class="font-mono text-xs">WHERE status = 'pending'</code>). The builder doubles them for the SQL-literal layer. Do not pre-double them yourself.</div>
-        </div>
-      </div>
     </div>
   </div>
 </section>
 
-<!-- ========== PLUGIN SYSTEM ========== -->
+<!-- PLUGIN SYSTEM -->
 <section id="plugins" class="py-16 px-4">
   <div class="max-w-6xl mx-auto">
     <div class="text-center mb-10">
       <h2 class="text-3xl font-bold mb-3 text-slate-900">Plugin System</h2>
-      <p class="text-slate-500 max-w-2xl mx-auto text-sm">Extend behavior via lifecycle hooks without touching workflow code. Plugin errors are swallowed and never abort steps.</p>
+      <p class="text-slate-500 max-w-2xl mx-auto text-sm">Lifecycle hooks without touching workflow code. Plugin errors are swallowed and never abort steps.</p>
     </div>
     <div class="grid md:grid-cols-2 gap-6">
       <div>
-        <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Available hooks</div>
-        <div class="overflow-x-auto rounded-xl bg-white border border-slate-200 shadow-sm">
+        <div class="overflow-x-auto rounded-xl bg-white border border-slate-200 shadow-sm mb-4">
           <table class="w-full text-sm">
-            <thead class="bg-slate-50 text-slate-600">
-              <tr><th class="text-left py-2.5 px-4 font-semibold">Hook</th><th class="text-left py-2.5 px-4 font-semibold">When</th></tr>
-            </thead>
+            <thead class="bg-slate-50 text-slate-600"><tr><th class="text-left py-2.5 px-4 font-semibold">Hook</th><th class="text-left py-2.5 px-4 font-semibold">Fires when</th></tr></thead>
             <tbody class="divide-y divide-slate-100">
-              <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">before_workflow</td><td class="py-2.5 px-4 text-xs text-slate-600">Before the workflow function is called</td></tr>
-              <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">after_workflow</td><td class="py-2.5 px-4 text-xs text-slate-600">After the workflow completes successfully</td></tr>
-              <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">on_workflow_error</td><td class="py-2.5 px-4 text-xs text-slate-600">When the workflow raises an exception</td></tr>
+              <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">before_workflow</td><td class="py-2.5 px-4 text-xs text-slate-600">Before workflow function is called</td></tr>
+              <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">after_workflow</td><td class="py-2.5 px-4 text-xs text-slate-600">After workflow completes successfully</td></tr>
+              <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">on_workflow_error</td><td class="py-2.5 px-4 text-xs text-slate-600">Workflow raises an exception</td></tr>
               <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">before_step</td><td class="py-2.5 px-4 text-xs text-slate-600">Before each step executes (not on replay)</td></tr>
               <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">after_step</td><td class="py-2.5 px-4 text-xs text-slate-600">After each step completes successfully</td></tr>
-              <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">on_step_error</td><td class="py-2.5 px-4 text-xs text-slate-600">When a step raises an exception</td></tr>
+              <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">on_step_error</td><td class="py-2.5 px-4 text-xs text-slate-600">Step raises an exception</td></tr>
             </tbody>
           </table>
         </div>
-        <div class="mt-3 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">StepEvent fields</div>
-        <div class="bg-slate-50 rounded-xl border border-slate-200 p-3 font-mono text-xs space-y-1 text-slate-700">
-          <div>event.instance_id</div>
-          <div>event.workflow_name</div>
-          <div>event.step_name</div>
-          <div>event.step_index</div>
-          <div>event.attempt</div>
+        <div class="bg-slate-50 rounded-xl border border-slate-200 p-3 font-mono text-xs text-slate-700">
+          <div class="text-slate-400 mb-1">StepEvent fields</div>
+          <div>instance_id, workflow_name, step_name, step_index, attempt</div>
         </div>
       </div>
       <div>
-        <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Custom plugin example</div>
         <pre><code class="language-python">from pgflows import LoggingPlugin, PgflowsPlugin, StepEvent, WorkflowEvent
 
-# Built-in: logs all lifecycle events
-app.register_plugin(LoggingPlugin())
+app.register_plugin(LoggingPlugin())   # built-in: logs all events
 
-# Custom: implement any subset of hooks
 class MetricsPlugin(PgflowsPlugin):
     async def after_step(self, event: StepEvent, result: object) -> None:
         metrics.record("step.completed", tags={
             "step": event.step_name,
-            "workflow": event.workflow_name,
+            "attempt": event.attempt,
         })
 
     async def on_step_error(self, event: StepEvent, error: Exception) -> None:
-        metrics.record("step.failed", tags={
-            "step": event.step_name,
-            "attempt": event.attempt,
-        })
+        metrics.record("step.failed", tags={"step": event.step_name})
 
     async def on_workflow_error(self, event: WorkflowEvent, error: Exception) -> None:
         alerting.notify(f"Workflow {event.workflow_name} failed: {error}")
 
-# Register BEFORE initialize()
-app.register_plugin(MetricsPlugin())
+app.register_plugin(MetricsPlugin())   # register BEFORE initialize()
 await app.initialize()</code></pre>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ========== RETRIES ========== -->
+<!-- RETRIES -->
 <section id="retries" class="py-16 px-4 bg-white border-y border-slate-200">
   <div class="max-w-6xl mx-auto">
     <div class="text-center mb-10">
       <h2 class="text-3xl font-bold mb-3 text-slate-900">Retry Configuration</h2>
-      <p class="text-slate-500 max-w-2xl mx-auto text-sm">Per-step <code class="font-mono text-xs bg-slate-100 px-1 rounded">RetryConfig</code> with exponential or linear backoff. Step-level config overrides workflow defaults.</p>
     </div>
     <div class="grid md:grid-cols-2 gap-6">
       <div>
         <pre><code class="language-python">from pgflows import RetryConfig
 
-# Per-step retry
 @app.step(retry=RetryConfig(
-    max_retries=5,                  # additional attempts after first failure
-    backoff="exponential",          # "exponential" or "linear"
+    max_retries=5,
+    backoff="exponential",        # or "linear"
     initial_delay_seconds=2.0,
     max_delay_seconds=60.0,
-    jitter=True,                    # randomize delay by +/-50%
+    jitter=True,                  # +/-50% randomization
 ))
-async def my_step(ctx, input: MyInput) -> MyOutput: ...
+async def my_step(ctx, inp: MyInput) -> MyOutput: ...
 
-# Workflow-level defaults (applied to all steps unless overridden)
+# Workflow-level defaults (overridden per-step)
 @app.workflow(step_defaults=RetryConfig(max_retries=2))
-async def my_workflow(ctx, input: MyInput) -> MyOutput: ...</code></pre>
+async def my_workflow(ctx, inp: MyInput) -> MyOutput: ...</code></pre>
       </div>
-      <div>
-        <div class="overflow-x-auto rounded-xl bg-white border border-slate-200 shadow-sm">
-          <table class="w-full text-sm">
-            <thead class="bg-slate-50 text-slate-600">
-              <tr><th class="text-left py-2.5 px-4 font-semibold">Field</th><th class="text-left py-2.5 px-4 font-semibold">Default</th><th class="text-left py-2.5 px-4 font-semibold">Description</th></tr>
-            </thead>
-            <tbody class="divide-y divide-slate-100">
-              <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">max_retries</td><td class="py-2.5 px-4 text-xs text-slate-500">3</td><td class="py-2.5 px-4 text-xs text-slate-600">Additional attempts after the first failure</td></tr>
-              <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">backoff</td><td class="py-2.5 px-4 text-xs text-slate-500">"exponential"</td><td class="py-2.5 px-4 text-xs text-slate-600">"exponential" or "linear"</td></tr>
-              <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">initial_delay_seconds</td><td class="py-2.5 px-4 text-xs text-slate-500">1.0</td><td class="py-2.5 px-4 text-xs text-slate-600">Delay before the second attempt</td></tr>
-              <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">max_delay_seconds</td><td class="py-2.5 px-4 text-xs text-slate-500">60.0</td><td class="py-2.5 px-4 text-xs text-slate-600">Cap on delay regardless of backoff factor</td></tr>
-              <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">jitter</td><td class="py-2.5 px-4 text-xs text-slate-500">True</td><td class="py-2.5 px-4 text-xs text-slate-600">Randomize delay by +/-50% to avoid thundering herd</td></tr>
-            </tbody>
-          </table>
-        </div>
+      <div class="overflow-x-auto rounded-xl bg-white border border-slate-200 shadow-sm">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 text-slate-600"><tr><th class="text-left py-2.5 px-4 font-semibold">Field</th><th class="text-left py-2.5 px-4 font-semibold">Default</th><th class="text-left py-2.5 px-4 font-semibold">Description</th></tr></thead>
+          <tbody class="divide-y divide-slate-100">
+            <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">max_retries</td><td class="py-2.5 px-4 text-xs text-slate-500">3</td><td class="py-2.5 px-4 text-xs text-slate-600">Additional attempts after first failure</td></tr>
+            <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">backoff</td><td class="py-2.5 px-4 text-xs text-slate-500">"exponential"</td><td class="py-2.5 px-4 text-xs text-slate-600">"exponential" or "linear"</td></tr>
+            <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">initial_delay_seconds</td><td class="py-2.5 px-4 text-xs text-slate-500">1.0</td><td class="py-2.5 px-4 text-xs text-slate-600">Delay before second attempt</td></tr>
+            <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">max_delay_seconds</td><td class="py-2.5 px-4 text-xs text-slate-500">60.0</td><td class="py-2.5 px-4 text-xs text-slate-600">Cap regardless of backoff factor</td></tr>
+            <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">jitter</td><td class="py-2.5 px-4 text-xs text-slate-500">True</td><td class="py-2.5 px-4 text-xs text-slate-600">+/-50% randomization to avoid thundering herd</td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ========== OBSERVABILITY ========== -->
-<section id="observability" class="py-16 px-4">
-  <div class="max-w-6xl mx-auto">
-    <div class="text-center mb-10">
-      <h2 class="text-3xl font-bold mb-3 text-slate-900">Observability</h2>
-      <p class="text-slate-500 max-w-2xl mx-auto text-sm">Full per-run execution history stored in Postgres. Access as typed Pydantic models. OpenTelemetry spans built in.</p>
-    </div>
-    <div class="grid md:grid-cols-2 gap-6">
-      <div>
-        <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Execution history (pg_durable)</div>
-        <pre><code class="language-python">client = app.pg_durable   # check app.pg_durable_available first
-
-# High-level status
-info  = await client.instance_info(iid)        # InstanceInfo
-nodes = await client.instance_nodes(iid)        # list[InstanceNode]
-execs = await client.instance_executions(iid)   # list[ExecutionRecord]
-m     = await client.metrics()                  # Metrics (cluster-wide)
-
-# InstanceNode fields: node_type, query, result_name, status,
-#                      result (decoded), updated_at
-# The graph expands into more rows than you wrote (THEN/JOIN/IF rows).
-
-# ExecutionRecord: status is Title-case ("Completed"), not lowercase
-for e in execs:
-    print(e.status, e.duration_ms, e.event_count)
-
-# Ad-hoc SQL around a run
-async with app.acquire() as conn:
-    rows = await conn.fetch(
-        "SELECT * FROM my_audit WHERE run_id = $1", iid
-    )</code></pre>
-      </div>
-      <div>
-        <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Pull-mode status (WorkflowStatus)</div>
-        <pre><code class="language-python">status = await app.get_status(instance_id)
-
-# WorkflowStatus fields:
-#   workflow_id, name, state, created_at,
-#   updated_at, error, output
-
-# WorkflowState is UPPERCASE str-enum:
-# PENDING, RUNNING, SUSPENDED, COMPLETED, FAILED, CANCELLED
-if status.state is WorkflowState.COMPLETED:
-    out = MyOutput.model_validate(status.output)</code></pre>
-        <div class="mt-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">OpenTelemetry</div>
-        <pre><code class="language-python">config = PgflowsConfig(
-    dsn="postgresql://...",
-    otel_enabled=True,          # default: True
-    otel_service_name="pgflows",
-    # reads OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_SERVICE_NAME, etc.
-)
-
-# Disable for local dev without a collector:
-config = PgflowsConfig(dsn="...", otel_enabled=False)</code></pre>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ========== SQL EXPORTER ========== -->
-<section id="exporter" class="py-16 px-4 bg-white border-y border-slate-200">
+<!-- SQL EXPORTER -->
+<section id="exporter" class="py-16 px-4">
   <div class="max-w-6xl mx-auto">
     <div class="text-center mb-10">
       <h2 class="text-3xl font-bold mb-3 text-slate-900">SQL Export</h2>
-      <p class="text-slate-500 max-w-2xl mx-auto text-sm">Export any registered Python workflow to a pg_durable SQL DSL string. Deploy definitions without code changes, or compose workflows at runtime from config.</p>
+      <p class="text-slate-500 max-w-2xl mx-auto text-sm">Export any Python workflow to a pg_durable SQL DSL string. Deploy without code changes, compose at runtime from config.</p>
     </div>
     <div class="grid md:grid-cols-2 gap-6">
       <div>
         <pre><code class="language-python">from pgflows import SqlExporter
 
-exporter = SqlExporter(
-    registry=app.registry,
-    base_url="https://api.example.com/pgflows"
-)
+exporter = SqlExporter(registry=app.registry, base_url="https://api.example.com/pgflows")
 
-# Export one workflow to runnable pg_durable SQL
+# Export one workflow -- produces runnable pg_durable SQL
 sql = exporter.export_workflow("process_order")
-# → SELECT df.setvar / df.start(df.http('.../steps/...') ~> ...)
 
-# Dry-run: inspect steps without producing runnable SQL
-result = exporter.dry_run("process_order")  # DryRunResult
+# Dry-run: inspect steps without SQL
+result = exporter.dry_run("process_order")   # DryRunResult
 for s in result.steps:
     print(s.step_name, s.http_url)
 
-# Compose at runtime from a step list (no Python workflow fn needed)
+# Compose at runtime from a step list (no Python fn required)
 sql = exporter.compose(
     workflow_name="on_call_response",
-    steps=["page_engineer", "create_ticket", "apply_remediation"],
+    steps=["page_engineer", "create_ticket"],
 )
+# compose() raises KeyError immediately on unregistered step names
 
-# Export all workflows (dev → prod migration)
+# Export all registered workflows
 sql_all = exporter.export_all()
 
-# Select binding mode per export
+# Select binding mode
 http_sql   = app.exporter(base_url="https://...", mode="http").export_workflow("process_order")
 worker_sql = app.exporter(mode="worker").export_workflow("process_order")</code></pre>
       </div>
-      <div class="space-y-4">
-        <div class="rounded-lg border-l-4 border-blue-500 bg-blue-50 p-4 flex items-start gap-3">
-          <div class="text-blue-600 text-xl">&#8505;</div>
-          <div>
-            <div class="font-semibold text-blue-900 text-sm">AST-based step discovery</div>
-            <div class="text-sm text-blue-900/70">Step discovery relies on finding direct function references: <code class="font-mono text-xs">await ctx.step(fn_name, inp)</code> is detected. <code class="font-mono text-xs">await ctx.step(lookup_fn(name), inp)</code> is not.</div>
-          </div>
+      <div class="space-y-3">
+        <div class="rounded-lg border-l-4 border-blue-500 bg-blue-50 p-4">
+          <div class="font-semibold text-blue-900 text-sm">Binding modes</div>
+          <div class="text-sm text-blue-900/70 mt-1"><code class="font-mono text-xs">mode="http"</code> (default): pg_durable calls your FastAPI endpoint via <code class="font-mono text-xs">df.http()</code>.<br><code class="font-mono text-xs">mode="worker"</code>: pg_durable enqueues via pgmq and StepWorker runs the step.</div>
         </div>
-        <div class="rounded-lg border-l-4 border-blue-500 bg-blue-50 p-4 flex items-start gap-3">
-          <div class="text-blue-600 text-xl">&#8505;</div>
-          <div>
-            <div class="font-semibold text-blue-900 text-sm">Two binding modes</div>
-            <div class="text-sm text-blue-900/70"><code class="font-mono text-xs">mode="http"</code> (default): pg_durable calls your FastAPI endpoint via <code class="font-mono text-xs">df.http()</code>. <code class="font-mono text-xs">mode="worker"</code>: pg_durable enqueues via pgmq and a <code class="font-mono text-xs">StepWorker</code> runs the step.</div>
-          </div>
-        </div>
-        <div class="rounded-lg border-l-4 border-emerald-500 bg-emerald-50 p-4 flex items-start gap-3">
-          <div class="text-emerald-600 text-xl">&#10003;</div>
-          <div>
-            <div class="font-semibold text-emerald-900 text-sm">compose() validates step names</div>
-            <div class="text-sm text-emerald-900/70"><code class="font-mono text-xs">compose()</code> checks that every step name is registered. Typos raise <code class="font-mono text-xs">KeyError</code> immediately rather than failing silently at runtime.</div>
-          </div>
+        <div class="rounded-lg border-l-4 border-blue-500 bg-blue-50 p-4">
+          <div class="font-semibold text-blue-900 text-sm">AST-based step discovery</div>
+          <div class="text-sm text-blue-900/70 mt-1">Step names are found by AST introspection. <code class="font-mono text-xs">await ctx.step(fn_name, inp)</code> is detected. <code class="font-mono text-xs">await ctx.step(lookup(name), inp)</code> is not.</div>
         </div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ========== SCHEDULING ========== -->
-<section id="scheduling" class="py-16 px-4">
-  <div class="max-w-6xl mx-auto">
-    <div class="text-center mb-10">
-      <h2 class="text-3xl font-bold mb-3 text-slate-900">Cron Scheduling</h2>
-      <p class="text-slate-500 max-w-2xl mx-auto text-sm"><code class="font-mono text-xs bg-slate-100 px-1 rounded">PgCronBackend</code> schedules recurring workflows via <code class="font-mono text-xs bg-slate-100 px-1 rounded">df.wait_for_schedule</code>. Only the <code class="font-mono text-xs bg-slate-100 px-1 rounded">df</code> extension is required; no pg_cron.</p>
-    </div>
-    <div class="grid md:grid-cols-2 gap-6">
-      <div>
-        <pre><code class="language-python">from pgflows import PgCronBackend
-
-scheduler = PgCronBackend(dsn=config.dsn)
-await scheduler.initialize()
-
-# Schedule a workflow to run every hour
-job_id = await scheduler.schedule(
-    job_name="hourly_health_check",
-    cron="0 * * * *",
-    command="SELECT pgflows.enqueue_workflow('health_check', '{}')",
-)
-
-# List and manage jobs
-jobs = await scheduler.list_jobs()         # list[ScheduledJob]
-await scheduler.unschedule(job_id)
-
-# Or use wait_for_schedule directly in a DSL graph:
-from pgflows import wait_for_schedule, sql_node
-node = (
-    wait_for_schedule("0 * * * *")         # fires on the next cron tick
-    >> sql_node("SELECT pgflows.enqueue_workflow('health_check', '{}')")
-)
-iid = await app.pg_durable.start(node, label="hourly-trigger")</code></pre>
-      </div>
-      <div class="space-y-4">
-        <div class="rounded-lg border-l-4 border-blue-500 bg-blue-50 p-4 flex items-start gap-3">
-          <div class="text-blue-600 text-xl">&#8505;</div>
-          <div>
-            <div class="font-semibold text-blue-900 text-sm">wait_for_schedule fires within ~1 min</div>
-            <div class="text-sm text-blue-900/70">The <code class="font-mono text-xs">df</code> cron evaluator checks at its own interval. A <code class="font-mono text-xs">'* * * * *'</code> schedule fires within about one minute in practice.</div>
-          </div>
-        </div>
-        <div class="rounded-lg border-l-4 border-amber-500 bg-amber-50 p-4 flex items-start gap-3">
-          <div class="text-amber-600 text-xl">&#9888;</div>
-          <div>
-            <div class="font-semibold text-amber-900 text-sm">Chain wait_for_schedule from non-parallel nodes</div>
-            <div class="text-sm text-amber-900/70">Placing <code class="font-mono text-xs">wait_for_schedule</code> inside a parallel join or loop in the same instance can cause a ContinueAsNew deadlock on the bundled pg_durable build. Keep it in its own instance or at the start of a sequence.</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ========== CONFIG REFERENCE ========== -->
+<!-- CONFIG REFERENCE -->
 <section id="config" class="py-16 px-4 bg-white border-y border-slate-200">
   <div class="max-w-6xl mx-auto">
     <div class="text-center mb-10">
       <h2 class="text-3xl font-bold mb-3 text-slate-900">Configuration Reference</h2>
-      <p class="text-slate-500 max-w-2xl mx-auto text-sm">All config lives in <code class="font-mono text-xs bg-slate-100 px-1 rounded">PgflowsConfig</code>, a Pydantic model. Pass it to <code class="font-mono text-xs bg-slate-100 px-1 rounded">WorkflowApp(config=...)</code>.</p>
+      <p class="text-slate-500 max-w-2xl mx-auto text-sm">All config in <code class="font-mono text-xs bg-slate-100 px-1 rounded">PgflowsConfig</code>, a Pydantic model. Pass to <code class="font-mono text-xs bg-slate-100 px-1 rounded">WorkflowApp(config=...)</code>.</p>
     </div>
     <div class="overflow-x-auto rounded-xl bg-white border border-slate-200 shadow-sm mb-6">
       <table class="w-full text-sm">
-        <thead class="bg-slate-50 text-slate-600">
-          <tr>
-            <th class="text-left py-2.5 px-4 font-semibold">Field</th>
-            <th class="text-left py-2.5 px-4 font-semibold">Default</th>
-            <th class="text-left py-2.5 px-4 font-semibold">Description</th>
-          </tr>
-        </thead>
+        <thead class="bg-slate-50 text-slate-600"><tr><th class="text-left py-2.5 px-4 font-semibold">Field</th><th class="text-left py-2.5 px-4 font-semibold">Default</th><th class="text-left py-2.5 px-4 font-semibold">Description</th></tr></thead>
         <tbody class="divide-y divide-slate-100">
           <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">dsn</td><td class="py-2.5 px-4 text-xs text-rose-600 font-semibold">required</td><td class="py-2.5 px-4 text-xs text-slate-600">PostgreSQL connection string</td></tr>
           <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">workflow_queue</td><td class="py-2.5 px-4 text-xs text-slate-500">"pgflows_workflows"</td><td class="py-2.5 px-4 text-xs text-slate-600">pgmq queue name for pull-mode dispatch</td></tr>
           <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">step_queue</td><td class="py-2.5 px-4 text-xs text-slate-500">"pgflows_steps"</td><td class="py-2.5 px-4 text-xs text-slate-600">pgmq queue for worker_step dispatch in push mode</td></tr>
           <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">step_notify_channel</td><td class="py-2.5 px-4 text-xs text-slate-500">"pgflows_steps"</td><td class="py-2.5 px-4 text-xs text-slate-600">pg_notify channel the StepWorker listens on</td></tr>
           <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">worker_concurrency</td><td class="py-2.5 px-4 text-xs text-slate-500">10</td><td class="py-2.5 px-4 text-xs text-slate-600">Max concurrent workflows in pull mode</td></tr>
-          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">step_visibility_timeout_seconds</td><td class="py-2.5 px-4 text-xs text-slate-500">300</td><td class="py-2.5 px-4 text-xs text-slate-600">pgmq message re-delivery timeout for step queue</td></tr>
-          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">workflow_visibility_timeout_seconds</td><td class="py-2.5 px-4 text-xs text-slate-500">300</td><td class="py-2.5 px-4 text-xs text-slate-600">pgmq message re-delivery timeout for workflow queue</td></tr>
-          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">otel_enabled</td><td class="py-2.5 px-4 text-xs text-slate-500">True</td><td class="py-2.5 px-4 text-xs text-slate-600">Enable OpenTelemetry tracing. Reads standard OTEL_* env vars.</td></tr>
-          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">otel_service_name</td><td class="py-2.5 px-4 text-xs text-slate-500">"pgflows"</td><td class="py-2.5 px-4 text-xs text-slate-600">OTel service name reported in spans</td></tr>
-          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">db_ssl</td><td class="py-2.5 px-4 text-xs text-slate-500">True</td><td class="py-2.5 px-4 text-xs text-slate-600">Require SSL for DB connections. Set False for local dev.</td></tr>
+          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">step_visibility_timeout_seconds</td><td class="py-2.5 px-4 text-xs text-slate-500">300</td><td class="py-2.5 px-4 text-xs text-slate-600">pgmq VT for step queue (re-delivery window)</td></tr>
+          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">workflow_visibility_timeout_seconds</td><td class="py-2.5 px-4 text-xs text-slate-500">300</td><td class="py-2.5 px-4 text-xs text-slate-600">pgmq VT for workflow queue</td></tr>
+          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">otel_enabled</td><td class="py-2.5 px-4 text-xs text-slate-500">True</td><td class="py-2.5 px-4 text-xs text-slate-600">OpenTelemetry tracing. Reads OTEL_* env vars. Set False for local dev.</td></tr>
+          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">otel_service_name</td><td class="py-2.5 px-4 text-xs text-slate-500">"pgflows"</td><td class="py-2.5 px-4 text-xs text-slate-600">OTel service name in spans</td></tr>
+          <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">db_ssl</td><td class="py-2.5 px-4 text-xs text-slate-500">True</td><td class="py-2.5 px-4 text-xs text-slate-600">Require SSL. Set False for local dev.</td></tr>
         </tbody>
       </table>
     </div>
-    <!-- Backend abstraction -->
     <div class="overflow-x-auto rounded-xl bg-white border border-slate-200 shadow-sm">
       <div class="px-4 py-3 bg-slate-50 border-b border-slate-200 font-semibold text-sm text-slate-700">Backend ABCs (swappable)</div>
       <table class="w-full text-sm">
-        <thead class="bg-slate-50 text-slate-600">
-          <tr>
-            <th class="text-left py-2.5 px-4 font-semibold">Component</th>
-            <th class="text-left py-2.5 px-4 font-semibold">Default</th>
-            <th class="text-left py-2.5 px-4 font-semibold">Interface</th>
-          </tr>
-        </thead>
+        <thead class="bg-slate-50 text-slate-600"><tr><th class="text-left py-2.5 px-4 font-semibold">Component</th><th class="text-left py-2.5 px-4 font-semibold">Default</th><th class="text-left py-2.5 px-4 font-semibold">Interface</th></tr></thead>
         <tbody class="divide-y divide-slate-100">
-          <tr><td class="py-2.5 px-4 text-xs text-slate-700 font-semibold">State + checkpoints</td><td class="py-2.5 px-4 font-mono text-xs text-violet-700">PgStateBackend</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">OrchestratorBackend</td></tr>
-          <tr><td class="py-2.5 px-4 text-xs text-slate-700 font-semibold">Step queue</td><td class="py-2.5 px-4 font-mono text-xs text-violet-700">PgmqBackend</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">QueueBackend</td></tr>
-          <tr><td class="py-2.5 px-4 text-xs text-slate-700 font-semibold">Cron scheduling</td><td class="py-2.5 px-4 font-mono text-xs text-violet-700">PgCronBackend</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">SchedulerBackend</td></tr>
+          <tr><td class="py-2.5 px-4 text-xs font-semibold text-slate-700">State + checkpoints</td><td class="py-2.5 px-4 font-mono text-xs text-violet-700">PgStateBackend</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">OrchestratorBackend</td></tr>
+          <tr><td class="py-2.5 px-4 text-xs font-semibold text-slate-700">Step queue</td><td class="py-2.5 px-4 font-mono text-xs text-violet-700">PgmqBackend</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">QueueBackend</td></tr>
+          <tr><td class="py-2.5 px-4 text-xs font-semibold text-slate-700">Cron scheduling</td><td class="py-2.5 px-4 font-mono text-xs text-violet-700">PgCronBackend</td><td class="py-2.5 px-4 font-mono text-xs text-slate-500">SchedulerBackend</td></tr>
         </tbody>
       </table>
     </div>
   </div>
 </section>
 
-<!-- ========== PUSH-MODE FASTAPI ENDPOINTS ========== -->
-<section id="api" class="py-16 px-4">
-  <div class="max-w-6xl mx-auto">
-    <div class="text-center mb-10">
-      <h2 class="text-3xl font-bold mb-3 text-slate-900">Push-Mode FastAPI Endpoints</h2>
-      <p class="text-slate-500 max-w-2xl mx-auto text-sm">Mount the pgflows router to expose step endpoints that pg_durable calls via <code class="font-mono text-xs bg-slate-100 px-1 rounded">df.http()</code>, plus management endpoints for starting, observing, and signaling workflow instances.</p>
-    </div>
-    <div class="grid md:grid-cols-2 gap-6">
-      <div>
-        <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Mounting the router</div>
-        <pre><code class="language-python">from pgflows.fastapi_integration import create_pgflows_router
-
-router = create_pgflows_router(app, prefix="/pgflows")
-fastapi_app.include_router(router)
-
-# Pass instance ID from pg_durable via header:
-# X-DF-Instance-ID: {sys_instance_id}
-# The step handler sets StepContext.instance_id for telemetry.</code></pre>
-      </div>
-      <div>
-        <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Endpoint reference</div>
-        <div class="overflow-x-auto rounded-xl bg-white border border-slate-200 shadow-sm">
-          <table class="w-full text-sm">
-            <thead class="bg-slate-50 text-slate-600">
-              <tr>
-                <th class="text-left py-2.5 px-4 font-semibold">Method</th>
-                <th class="text-left py-2.5 px-4 font-semibold">Path</th>
-                <th class="text-left py-2.5 px-4 font-semibold">Purpose</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-100">
-              <tr><td class="py-2.5 px-4"><span class="inline-block px-2 py-0.5 text-xs rounded-full bg-emerald-100 text-emerald-700 font-semibold">POST</span></td><td class="py-2.5 px-4 font-mono text-xs">/pgflows/steps/{step_name}</td><td class="py-2.5 px-4 text-xs text-slate-600">pg_durable calls this via df.http()</td></tr>
-              <tr><td class="py-2.5 px-4"><span class="inline-block px-2 py-0.5 text-xs rounded-full bg-emerald-100 text-emerald-700 font-semibold">POST</span></td><td class="py-2.5 px-4 font-mono text-xs">/pgflows/workflows/{name}/start</td><td class="py-2.5 px-4 text-xs text-slate-600">Start a workflow by name</td></tr>
-              <tr><td class="py-2.5 px-4"><span class="inline-block px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700 font-semibold">GET</span></td><td class="py-2.5 px-4 font-mono text-xs">/pgflows/workflows/{id}</td><td class="py-2.5 px-4 text-xs text-slate-600">Get instance status</td></tr>
-              <tr><td class="py-2.5 px-4"><span class="inline-block px-2 py-0.5 text-xs rounded-full bg-rose-100 text-rose-700 font-semibold">DELETE</span></td><td class="py-2.5 px-4 font-mono text-xs">/pgflows/workflows/{id}</td><td class="py-2.5 px-4 text-xs text-slate-600">Cancel an instance</td></tr>
-              <tr><td class="py-2.5 px-4"><span class="inline-block px-2 py-0.5 text-xs rounded-full bg-emerald-100 text-emerald-700 font-semibold">POST</span></td><td class="py-2.5 px-4 font-mono text-xs">/pgflows/workflows/{id}/signal</td><td class="py-2.5 px-4 text-xs text-slate-600">Send a signal (pg_durable only)</td></tr>
-              <tr><td class="py-2.5 px-4"><span class="inline-block px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700 font-semibold">GET</span></td><td class="py-2.5 px-4 font-mono text-xs">/pgflows/workflows</td><td class="py-2.5 px-4 text-xs text-slate-600">List all instances</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ========== REQUIREMENTS & INSTALLATION ========== -->
-<section id="requirements" class="py-16 px-4 bg-white border-y border-slate-200">
+<!-- REQUIREMENTS -->
+<section id="requirements" class="py-16 px-4">
   <div class="max-w-6xl mx-auto">
     <div class="text-center mb-10">
       <h2 class="text-3xl font-bold mb-3 text-slate-900">Requirements &amp; Installation</h2>
-      <p class="text-slate-500 max-w-2xl mx-auto text-sm">Python 3.13+ and Postgres 15+. Two extensions pre-installed in the bundled Docker image.</p>
+      <p class="text-slate-500 max-w-2xl mx-auto text-sm">Python 3.13+ and Postgres 15+. Both extensions are pre-installed in the bundled Docker image.</p>
     </div>
     <div class="grid md:grid-cols-2 gap-6">
       <div>
-        <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Postgres extensions</div>
+        <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Extensions</div>
         <div class="overflow-x-auto rounded-xl bg-white border border-slate-200 shadow-sm mb-4">
           <table class="w-full text-sm">
-            <thead class="bg-slate-50 text-slate-600">
-              <tr>
-                <th class="text-left py-2.5 px-4 font-semibold">Extension</th>
-                <th class="text-left py-2.5 px-4 font-semibold">Purpose</th>
-                <th class="text-left py-2.5 px-4 font-semibold">Required for</th>
-              </tr>
-            </thead>
+            <thead class="bg-slate-50 text-slate-600"><tr><th class="text-left py-2.5 px-4 font-semibold">Extension</th><th class="text-left py-2.5 px-4 font-semibold">Purpose</th><th class="text-left py-2.5 px-4 font-semibold">Needed for</th></tr></thead>
             <tbody class="divide-y divide-slate-100">
-              <tr>
-                <td class="py-2.5 px-4 font-mono text-xs text-violet-700">pgmq</td>
-                <td class="py-2.5 px-4 text-xs text-slate-600">Step/workflow queue, dead-letter</td>
-                <td class="py-2.5 px-4 text-xs text-slate-600">Pull mode + push pgmq binding</td>
-              </tr>
-              <tr>
-                <td class="py-2.5 px-4 font-mono text-xs text-violet-700">pg_durable (df)</td>
-                <td class="py-2.5 px-4 text-xs text-slate-600">Durable graph execution, scheduling, signals, history</td>
-                <td class="py-2.5 px-4 text-xs text-slate-600">Push mode + SQL export + PgCronBackend</td>
-              </tr>
+              <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">pgmq</td><td class="py-2.5 px-4 text-xs text-slate-600">Message queue, dead-letter</td><td class="py-2.5 px-4 text-xs text-slate-600">Pull mode + push pgmq binding</td></tr>
+              <tr><td class="py-2.5 px-4 font-mono text-xs text-violet-700">pg_durable (df)</td><td class="py-2.5 px-4 text-xs text-slate-600">Graph execution, history, signals, scheduling</td><td class="py-2.5 px-4 text-xs text-slate-600">Push mode + SQL export + PgCronBackend</td></tr>
             </tbody>
           </table>
         </div>
         <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Docker images</div>
         <div class="overflow-x-auto rounded-xl bg-white border border-slate-200 shadow-sm">
           <table class="w-full text-sm">
-            <thead class="bg-slate-50 text-slate-600">
-              <tr>
-                <th class="text-left py-2.5 px-4 font-semibold">Image</th>
-                <th class="text-left py-2.5 px-4 font-semibold">Tag</th>
-              </tr>
-            </thead>
+            <thead class="bg-slate-50 text-slate-600"><tr><th class="text-left py-2.5 px-4 font-semibold">Image</th><th class="text-left py-2.5 px-4 font-semibold">Tag</th></tr></thead>
             <tbody class="divide-y divide-slate-100">
-              <tr>
-                <td class="py-2.5 px-4 font-mono text-xs text-slate-700">ghcr.io/niradler/pgflows</td>
-                <td class="py-2.5 px-4 text-xs text-slate-500">latest, 0.1.2</td>
-              </tr>
-              <tr>
-                <td class="py-2.5 px-4 font-mono text-xs text-slate-700">niradler/pgflows</td>
-                <td class="py-2.5 px-4 text-xs text-slate-500">latest, 0.1.2</td>
-              </tr>
-              <tr>
-                <td class="py-2.5 px-4 font-mono text-xs text-slate-700">niradler/pgflows-postgres</td>
-                <td class="py-2.5 px-4 text-xs text-slate-500">17-1.5.1-0.2.2 (pg version + pgmq + pg_durable)</td>
-              </tr>
+              <tr><td class="py-2.5 px-4 font-mono text-xs">ghcr.io/niradler/pgflows</td><td class="py-2.5 px-4 text-xs text-slate-500">latest, 0.1.2</td></tr>
+              <tr><td class="py-2.5 px-4 font-mono text-xs">niradler/pgflows</td><td class="py-2.5 px-4 text-xs text-slate-500">latest, 0.1.2</td></tr>
+              <tr><td class="py-2.5 px-4 font-mono text-xs">niradler/pgflows-postgres</td><td class="py-2.5 px-4 text-xs text-slate-500">17-1.5.1-0.2.2 (pg + pgmq + pg_durable)</td></tr>
             </tbody>
           </table>
         </div>
       </div>
       <div>
-        <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Install</div>
+        <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Install &amp; develop</div>
         <div class="bg-slate-900 text-slate-200 rounded-xl p-4 font-mono text-xs leading-relaxed overflow-x-auto mb-4">
-          <div class="flex gap-2 whitespace-pre"><span class="text-slate-500 select-none shrink-0">$</span><span class="text-slate-100">uv add pgflows</span></div>
-          <div class="flex gap-2 whitespace-pre"><span class="text-slate-500 select-none shrink-0">#</span><span class="text-slate-400">with FastAPI push-mode support:</span></div>
-          <div class="flex gap-2 whitespace-pre"><span class="text-slate-500 select-none shrink-0">$</span><span class="text-slate-100">uv sync --extra fastapi</span></div>
+          <div class="flex gap-2 whitespace-pre"><span class="text-slate-500 select-none shrink-0">$</span><span>uv add pgflows</span></div>
+          <div class="flex gap-2 whitespace-pre mt-1"><span class="text-slate-500 select-none shrink-0">$</span><span>uv sync --extra fastapi   <span class="text-slate-400"># push-mode FastAPI router</span></span></div>
         </div>
         <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Extend the app image</div>
         <div class="bg-slate-900 text-slate-200 rounded-xl p-4 font-mono text-xs leading-relaxed overflow-x-auto mb-4">
           <div class="text-slate-400"># Dockerfile</div>
-          <div class="text-slate-100">FROM ghcr.io/niradler/pgflows:0.1.2</div>
-          <div class="text-slate-100">WORKDIR /app</div>
-          <div class="text-slate-100">COPY . .</div>
-          <div class="text-slate-100">CMD ["python", "worker.py"]</div>
+          <div>FROM ghcr.io/niradler/pgflows:0.1.2</div>
+          <div>WORKDIR /app</div>
+          <div>COPY . .</div>
+          <div>CMD ["python", "worker.py"]</div>
         </div>
-        <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Development</div>
+        <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Make targets</div>
         <div class="bg-slate-900 text-slate-200 rounded-xl p-4 font-mono text-xs leading-relaxed overflow-x-auto">
-          <div class="flex gap-2 whitespace-pre"><span class="text-slate-500 select-none shrink-0">$</span><span class="text-slate-100">make install</span></div>
-          <div class="flex gap-2 whitespace-pre"><span class="text-slate-500 select-none shrink-0">$</span><span class="text-slate-100">make up</span></div>
-          <div class="flex gap-2 whitespace-pre"><span class="text-slate-500 select-none shrink-0">$</span><span class="text-slate-100">make test-unit</span></div>
-          <div class="flex gap-2 whitespace-pre"><span class="text-slate-500 select-none shrink-0">$</span><span class="text-slate-100">make test-e2e</span></div>
-          <div class="flex gap-2 whitespace-pre"><span class="text-slate-500 select-none shrink-0">$</span><span class="text-slate-100">make lint</span></div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ========== COMMON MISTAKES ========== -->
-<section class="py-12 px-4">
-  <div class="max-w-6xl mx-auto">
-    <div class="text-center mb-8">
-      <h2 class="text-2xl font-bold mb-2 text-slate-900">Common Mistakes</h2>
-      <p class="text-slate-500 text-sm">Things that fail silently or with confusing errors the first time.</p>
-    </div>
-    <div class="grid md:grid-cols-2 gap-4">
-      <div class="rounded-lg border-l-4 border-red-500 bg-red-50 p-4 flex items-start gap-3">
-        <div class="text-red-600 text-xl">&#10007;</div>
-        <div>
-          <div class="font-semibold text-red-900 text-sm">Forgetting await app.initialize()</div>
-          <div class="text-sm text-red-900/70">Must be called before <code class="font-mono text-xs">app.start()</code>, <code class="font-mono text-xs">app.get_status()</code>, or any other app method. Raises <code class="font-mono text-xs">RuntimeError</code> otherwise.</div>
-        </div>
-      </div>
-      <div class="rounded-lg border-l-4 border-red-500 bg-red-50 p-4 flex items-start gap-3">
-        <div class="text-red-600 text-xl">&#10007;</div>
-        <div>
-          <div class="font-semibold text-red-900 text-sm">app.pg_durable without checking availability</div>
-          <div class="text-sm text-red-900/70">Accessing <code class="font-mono text-xs">app.pg_durable</code> raises <code class="font-mono text-xs">RuntimeError</code> if the <code class="font-mono text-xs">df</code> extension is absent. Check <code class="font-mono text-xs">app.pg_durable_available</code> first.</div>
-        </div>
-      </div>
-      <div class="rounded-lg border-l-4 border-red-500 bg-red-50 p-4 flex items-start gap-3">
-        <div class="text-red-600 text-xl">&#10007;</div>
-        <div>
-          <div class="font-semibold text-red-900 text-sm">Forgetting await app.close()</div>
-          <div class="text-sm text-red-900/70">Connection pools stay open until the process exits. Always call <code class="font-mono text-xs">app.close()</code> in teardown or use it as an async context manager.</div>
-        </div>
-      </div>
-      <div class="rounded-lg border-l-4 border-red-500 bg-red-50 p-4 flex items-start gap-3">
-        <div class="text-red-600 text-xl">&#10007;</div>
-        <div>
-          <div class="font-semibold text-red-900 text-sm">Passing a string to app.start() instead of a function</div>
-          <div class="text-sm text-red-900/70"><code class="font-mono text-xs">app.start(process_order, inp)</code> takes the function object. <code class="font-mono text-xs">app.start("process_order", inp)</code> raises <code class="font-mono text-xs">AttributeError</code>.</div>
-        </div>
-      </div>
-      <div class="rounded-lg border-l-4 border-red-500 bg-red-50 p-4 flex items-start gap-3">
-        <div class="text-red-600 text-xl">&#10007;</div>
-        <div>
-          <div class="font-semibold text-red-900 text-sm">DSL operator precedence</div>
-          <div class="text-sm text-red-900/70"><code class="font-mono text-xs">&gt;&gt;</code> has lower precedence than <code class="font-mono text-xs">&amp;</code> and <code class="font-mono text-xs">|</code>. Always wrap parallel branches explicitly: <code class="font-mono text-xs">(a &amp; b) &gt;&gt; c</code>, not <code class="font-mono text-xs">a &amp; b &gt;&gt; c</code>.</div>
-        </div>
-      </div>
-      <div class="rounded-lg border-l-4 border-red-500 bg-red-50 p-4 flex items-start gap-3">
-        <div class="text-red-600 text-xl">&#10007;</div>
-        <div>
-          <div class="font-semibold text-red-900 text-sm">setvar inside a push-mode step</div>
-          <div class="text-sm text-red-900/70">Durable variables must be set before <code class="font-mono text-xs">df.start()</code> in SQL. From Python, call <code class="font-mono text-xs">await client.setvar()</code> before <code class="font-mono text-xs">await client.start()</code>.</div>
+          <div class="flex gap-2 whitespace-pre"><span class="text-slate-500 select-none shrink-0">$</span><span>make install    <span class="text-slate-400"># uv sync</span></span></div>
+          <div class="flex gap-2 whitespace-pre"><span class="text-slate-500 select-none shrink-0">$</span><span>make up         <span class="text-slate-400"># docker compose up -d --wait</span></span></div>
+          <div class="flex gap-2 whitespace-pre"><span class="text-slate-500 select-none shrink-0">$</span><span>make test-unit  <span class="text-slate-400"># no DB needed</span></span></div>
+          <div class="flex gap-2 whitespace-pre"><span class="text-slate-500 select-none shrink-0">$</span><span>make test-e2e   <span class="text-slate-400"># starts Postgres first</span></span></div>
+          <div class="flex gap-2 whitespace-pre"><span class="text-slate-500 select-none shrink-0">$</span><span>make lint</span></div>
         </div>
       </div>
     </div>
@@ -1162,7 +1101,7 @@ fastapi_app.include_router(router)
       <a href="https://github.com/niradler/pgflows" class="text-blue-400 hover:underline">GitHub</a>
       <a href="https://github.com/niradler/pgflows/blob/master/LICENSE" class="text-blue-400 hover:underline">MIT License</a>
     </div>
-    <div class="mt-4 text-xs text-slate-600">Python 3.13+ required. Postgres 15+ with pgmq and pg_durable.</div>
+    <div class="mt-4 text-xs text-slate-600">Python 3.13+ -- Postgres 15+ with pgmq and pg_durable</div>
   </div>
 </footer>
 
