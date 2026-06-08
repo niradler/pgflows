@@ -1,6 +1,6 @@
 [project]
 name = "pgflows"
-version = "0.1.2"
+version = "0.1.3"
 description = "Durable workflow engine SDK for Python + Postgres"
 readme = "README.md"
 license = { text = "MIT" }
