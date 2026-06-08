@@ -52,12 +52,13 @@ RUN --mount=type=cache,target=/root/.cargo/registry \
         find /tmp -name 'pg_durable*.so'                    -exec cp {} /artifacts/lib/ \; ; \
     else \
         echo "==> pg_durable: building from source (ref: ${PG_DURABLE_GIT_REF})"; \
-        git clone --depth 1 https://github.com/microsoft/pg_durable.git .; \
-        cargo pgrx package \
+        git clone --depth 1 https://github.com/microsoft/pg_durable.git /tmp/pg_durable_src; \
+        cd /tmp/pg_durable_src; \
+        CARGO_TARGET_DIR=/build/target cargo pgrx package \
             --features http-allow-all \
             --pg-config /usr/lib/postgresql/18/bin/pg_config; \
-        cp target/release/pg_durable-pg18/usr/share/postgresql/18/extension/* /artifacts/share/; \
-        cp target/release/pg_durable-pg18/usr/lib/postgresql/18/lib/*          /artifacts/lib/; \
+        cp /build/target/release/pg_durable-pg18/usr/share/postgresql/18/extension/* /artifacts/share/; \
+        cp /build/target/release/pg_durable-pg18/usr/lib/postgresql/18/lib/*          /artifacts/lib/; \
     fi
 
 # ── stage 2: pgmq SQL files ───────────────────────────────────────────────────
