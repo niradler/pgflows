@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import asyncpg
 from pydantic import BaseModel
 
+from pgflows.backends.pg_cron import PgCronBackend
 from pgflows.backends.pg_state import PgStateBackend
 from pgflows.backends.pgmq import PgmqBackend
 from pgflows.config import PgflowsConfig
 from pgflows.dsl import DslNode, worker_step
+from pgflows.graph import GraphSpec
+from pgflows.graph_compiler import compile_graph as _compile_graph
 from pgflows.logger import get_logger
 from pgflows.migrations import run_migrations
 from pgflows.plugins import PgflowsPlugin
@@ -44,6 +48,8 @@ class WorkflowApp:
         self._supervising = False
         self._pg_durable_available: bool = False
         self._pg_durable_client: PgDurableClient | None = None
+        self._pg_cron_available: bool = False
+        self._scheduler: PgCronBackend | None = None
 
     async def initialize(self) -> None:
         """Apply pending DB migrations, open connection pools, register workflows."""
@@ -80,6 +86,11 @@ class WorkflowApp:
             from pgflows.pg_durable_client import PgDurableClient
 
             self._pg_durable_client = PgDurableClient(self._state._pool)  # type: ignore[arg-type]  # _pool is non-None post-initialize
+
+        self._pg_cron_available = await self._state.check_extension("pg_cron")
+        if self._pg_cron_available:
+            self._scheduler = PgCronBackend(pool=self._state._pool)
+            await self._scheduler.initialize()
 
         self._worker = WorkflowWorker(
             registry=self.registry,
@@ -271,6 +282,108 @@ class WorkflowApp:
         kwargs.setdefault("notify_channel", self.config.step_notify_channel)
         return worker_step(step_name, **kwargs)  # type: ignore[arg-type]
 
+    def graph_json_schema(self) -> dict:
+        """JSON Schema for the GraphSpec workflow document — hand to UIs and validators."""
+        return GraphSpec.model_json_schema(by_alias=True)
+
+    def compile_graph(self, spec: GraphSpec) -> DslNode:
+        """Compile a data-driven GraphSpec into a pg_durable DSL node.
+
+        Pure — usable offline. Validates the spec against pg_durable composition limits
+        (raises GraphCompileError) and emits DSL bound to this app's step queue/channel.
+        """
+        return _compile_graph(
+            spec,
+            step_queue=self.config.step_queue,
+            notify_channel=self.config.step_notify_channel,
+        )
+
+    async def start_graph(self, spec: GraphSpec, *, label: str) -> str:
+        """Compile a GraphSpec and start it as a pg_durable run. Returns the instance ID.
+
+        Requires the pg_durable (df) extension — GraphSpec workflows are compiled to DSL
+        and orchestrated by Postgres. Run a StepWorker (``run_step_worker``) to execute the
+        steps the graph dispatches.
+
+        ``spec.input`` (if set) seeds the single ``{input}`` durable var the first node
+        reads. Because that var is database-scoped, ``start_graph`` is single-flight per
+        app: don't fire concurrent runs with different inputs against one app instance.
+        """
+        self._assert_initialized()
+        if not self._pg_durable_available:
+            raise RuntimeError(
+                "start_graph requires the pg_durable (df) extension, which is not installed "
+                "in the connected database. GraphSpec workflows compile to pg_durable DSL "
+                "and run via df.start()."
+            )
+        node = self.compile_graph(spec)
+        if spec.input is not None:
+            await self.pg_durable.setvar("input", json.dumps(spec.input))
+        return await self.pg_durable.start(node, label=label)
+
+    @property
+    def pg_cron_available(self) -> bool:
+        """True if the pg_cron extension is installed — required for schedule_workflow()."""
+        return self._pg_cron_available
+
+    async def schedule_workflow(
+        self,
+        job_name: str,
+        cron: str,
+        workflow_fn: Callable,
+        input_model: BaseModel | None = None,
+    ) -> str:
+        """Recurringly start a workflow on a cron schedule via pg_cron. Returns the job id.
+
+        Registers a pg_cron job whose command creates a pending instance and enqueues it
+        onto the workflow queue (+ a NOTIFY), the durable-safe recurring trigger — a
+        running pull worker (``run_worker``) then picks it up each tick. Re-scheduling the
+        same ``job_name`` replaces the existing job. Requires the pg_cron extension.
+        """
+        self._assert_initialized()
+        if self._scheduler is None:
+            raise RuntimeError(
+                "schedule_workflow requires the pg_cron extension, which is not installed. "
+                "Add pg_cron to shared_preload_libraries and CREATE EXTENSION pg_cron."
+            )
+        defn = self._resolve_defn(workflow_fn)
+        input_json = input_model.model_dump_json() if input_model is not None else "{}"
+        command = self._start_workflow_sql(defn.name, input_json)
+        return await self._scheduler.schedule(job_name, cron, command)
+
+    async def unschedule_workflow(self, job_name: str) -> None:
+        """Remove a scheduled workflow by job name (idempotent)."""
+        self._assert_initialized()
+        if self._scheduler is None:
+            raise RuntimeError("schedule_workflow requires the pg_cron extension")
+        await self._scheduler.unschedule_by_name(job_name)
+
+    async def list_schedules(self) -> list:
+        """List all pg_cron jobs in the database."""
+        self._assert_initialized()
+        if self._scheduler is None:
+            raise RuntimeError("schedule_workflow requires the pg_cron extension")
+        return await self._scheduler.list_jobs()
+
+    def _start_workflow_sql(self, workflow_name: str, input_json: str) -> str:
+        """SQL (run by pg_cron) that starts a workflow run: create instance + enqueue + notify.
+
+        Mirrors ``start()`` entirely in-database so no Python callback is needed on each tick.
+        """
+        wf = workflow_name.replace("'", "''")
+        payload = input_json.replace("'", "''")
+        queue = self.config.workflow_queue
+        return (
+            "WITH inst AS ("
+            "INSERT INTO pgflows.workflow_instances (workflow_name, input) "
+            f"VALUES ('{wf}', '{payload}'::jsonb) RETURNING instance_id, input) "
+            f"SELECT pgmq.send('{queue}', jsonb_build_object("
+            f"'workflow_name', '{wf}', "
+            "'instance_id', inst.instance_id::text, "
+            "'input', inst.input)), "
+            f"pg_notify('{queue}', inst.instance_id::text) FROM inst"
+        )
+
     def acquire(self) -> asyncpg.pool.PoolAcquireContext:
         """Acquire a pooled connection for ad-hoc SQL around a durable run.
 
@@ -305,6 +418,8 @@ class WorkflowApp:
             self._worker.shutdown()
         if self._step_worker:
             self._step_worker.shutdown()
+        if self._scheduler:
+            await self._scheduler.close()
         if self._state:
             await self._state.close()
         if self._queue:

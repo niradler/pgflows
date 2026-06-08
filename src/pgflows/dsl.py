@@ -188,6 +188,23 @@ def loop(body: DslNode, condition: DslNode | None = None) -> DslNode:
     return DslNode(f"df.loop({body._sql}, {condition._sql})")
 
 
+def enqueue(queue: str, payload: str, *, notify_channel: str | None = None) -> DslNode:
+    """Enqueue a pgmq message and ring the NOTIFY doorbell — the pgmq+NOTIFY trigger.
+
+    ``payload`` is a SQL expression that yields jsonb (e.g. a ``jsonb_build_object(...)``
+    call or a ``'{...}'::jsonb`` literal). Pairs with any listener draining ``queue``
+    (e.g. a ``StepWorker``, or a pull-mode worker reading the workflow queue): use it to
+    fan a durable graph out to a separate run without an inbound HTTP server. This is the
+    durable-safe way to trigger work from inside a ``loop``/``cron`` — see ``cron``.
+    """
+    _require_ident(queue, "queue")
+    chan = notify_channel or queue
+    _require_ident(chan, "notify_channel")
+    send = sql_node(f"SELECT pgmq.send('{queue}', ({payload})::jsonb)")
+    notify = sql_node(f"SELECT pg_notify('{chan}', '{{sys_instance_id}}')")
+    return send >> notify
+
+
 def join3(a: DslNode, b: DslNode, c: DslNode) -> DslNode:
     """Three-way parallel join — waits for all three to complete."""
     return DslNode(f"df.join3({a._sql}, {b._sql}, {c._sql})")
@@ -213,6 +230,7 @@ def break_(value: str | None = None) -> DslNode:
 __all__ = [
     "DslNode",
     "break_",
+    "enqueue",
     "http",
     "if_node",
     "if_rows",

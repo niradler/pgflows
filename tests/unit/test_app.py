@@ -201,6 +201,89 @@ async def test_initialize_wires_workflow_vt_separately():
     assert captured["per_queue_vt"] == {"my_workflows": 120}
 
 
+def test_graph_json_schema_is_published():
+    app = _make_app()
+    schema = app.graph_json_schema()
+    assert schema["title"] == "GraphSpec"
+    assert "else" in schema["$defs"]["BranchNode"]["properties"]
+
+
+def test_compile_graph_binds_configured_queue_and_channel():
+    from pgflows.graph import GraphSpec
+
+    app = WorkflowApp(
+        config=PgflowsConfig(
+            dsn="postgresql://x:x@localhost/x",
+            step_queue="orders_steps",
+            step_notify_channel="orders_bell",
+        )
+    )
+    spec = GraphSpec.model_validate({"root": {"type": "step", "step": "charge"}})
+    sql = str(app.compile_graph(spec))
+    assert "pgmq.send(''orders_steps''" in sql
+    assert "pg_notify(''orders_bell''" in sql
+
+
+async def test_start_graph_requires_initialized():
+    from pgflows.graph import GraphSpec
+
+    app = _make_app()
+    spec = GraphSpec.model_validate({"root": {"type": "step", "step": "a"}})
+    with pytest.raises(RuntimeError, match="not initialized"):
+        await app.start_graph(spec, label="x")
+
+
+async def test_start_graph_requires_pg_durable():
+    from pgflows.graph import GraphSpec
+
+    app = _make_app()
+    app._initialized = True
+    app._pg_durable_available = False
+    spec = GraphSpec.model_validate({"root": {"type": "step", "step": "a"}})
+    with pytest.raises(RuntimeError, match="pg_durable"):
+        await app.start_graph(spec, label="x")
+
+
+async def test_schedule_workflow_requires_pg_cron():
+    app = _make_app()
+    app._initialized = True
+    app._scheduler = None
+    with pytest.raises(RuntimeError, match="pg_cron"):
+        await app.schedule_workflow("job", "0 * * * *", lambda: None)
+
+
+async def test_schedule_workflow_builds_start_sql_and_registers_job():
+    app = _make_app()
+    app._initialized = True
+
+    @app.workflow(name="nightly_report")
+    async def nightly_report(ctx, input: GreetInput) -> GreetOutput:
+        return GreetOutput(message="x")
+
+    app._scheduler = AsyncMock()
+    app._scheduler.schedule = AsyncMock(return_value="7")
+
+    job_id = await app.schedule_workflow(
+        "nightly", "0 0 * * *", nightly_report, GreetInput(name="bob")
+    )
+    assert job_id == "7"
+    name_arg, cron_arg, command = app._scheduler.schedule.call_args[0]
+    assert name_arg == "nightly"
+    assert cron_arg == "0 0 * * *"
+    # the command creates a pending instance and enqueues it on the workflow queue
+    assert "INSERT INTO pgflows.workflow_instances" in command
+    assert "pgmq.send('pgflows_workflows'" in command
+    assert "'workflow_name', 'nightly_report'" in command
+    assert '{"name":"bob"}' in command
+
+
+def test_start_workflow_sql_escapes_quotes():
+    app = _make_app()
+    sql = app._start_workflow_sql("wf", '{"note":"O\'\'Brien"}')
+    # the builder doubles single quotes for safe embedding in the pg_cron command literal
+    assert "''" in sql
+
+
 async def test_queue_ops_require_initialized():
     app = _make_app()
 

@@ -1,4 +1,4 @@
-# Live e2e database: Postgres 17 with BOTH pg_durable (df) and pgmq.
+# Live e2e database: Postgres 18 with pg_durable (df), pgmq, AND pg_cron.
 # Build the image first:  docker build -t pgflows-e2e-dfpgmq:latest tests/e2e/docker
 # Then:                    docker compose -f tests/e2e/docker/docker-compose.yml up -d --wait
 services:
@@ -13,10 +13,11 @@ services:
       - "5433:5432"
     command: >
       postgres
-      -c shared_preload_libraries=pg_durable
+      -c shared_preload_libraries=pg_durable,pg_cron
       -c pg_durable.database=pgflows_test
       -c pg_durable.worker_role=pgflows
       -c pg_durable.enable_superuser_instances=on
+      -c cron.database_name=pgflows_test
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U pgflows -d pgflows_test"]
       interval: 5s
