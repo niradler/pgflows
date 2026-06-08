@@ -36,11 +36,7 @@ class GraphCompileError(PgflowsError):
 
 
 def compile_graph(spec: GraphSpec, *, step_queue: str, notify_channel: str) -> DslNode:
-    """Compile a GraphSpec to a pg_durable DSL node, ready for ``df.start()``.
-
-    Validates the spec against verified pg_durable composition limits first (raising
-    ``GraphCompileError`` with a fix-it message), then emits the richest correct DSL.
-    """
+    """Compile a GraphSpec to a pg_durable DSL node. Raises GraphCompileError for invalid shapes."""
     _guard(spec.root)
     ctx = _Ctx(step_queue, notify_channel)
     node, _ = _compile(spec.root, ctx, _INITIAL_INPUT)
@@ -163,12 +159,8 @@ def _compile_loop(node: LoopNode, ctx: _Ctx, input_ref: str) -> tuple[DslNode, N
 
 
 def _compile_condition(condition: Condition, ctx: _Ctx, input_ref: str) -> DslNode:
-    """Run the condition step, then emit a SQL node that SELECTs a single boolean — the
-    value ``?>`` / ``df.loop`` branch on (first row's first column; a ``false`` row takes
-    the else arm, ``true`` takes then). Truthy reads ``->>'result'`` when present (the
-    common ``{result: bool}`` shape), else the whole value's text; falsy values are
-    ``false``/``0``/``null``/empty.
-    """
+    # Reads ->>'result' when present (common {result: bool} shape), else the whole value's text.
+    # pg_durable branches on the first column of the first row; falsy = false/0/null/empty.
     cap = ctx.fresh("cond")
     expr = condition.input if condition.input is not None else input_ref
     step = worker_step(

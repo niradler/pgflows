@@ -22,7 +22,7 @@ from pgflows.registry import WorkflowRegistry
 from pgflows.sql_exporter import SqlExporter
 from pgflows.step_worker import StepWorker
 from pgflows.telemetry import PgflowsTelemetry
-from pgflows.types import QueueMetrics, RetryConfig, WorkflowState, WorkflowStatus
+from pgflows.types import QueueMetrics, RetryConfig, ScheduledJob, WorkflowState, WorkflowStatus
 from pgflows.worker import WorkflowWorker
 
 if TYPE_CHECKING:
@@ -33,22 +33,7 @@ _log = get_logger("app")
 
 
 class WorkflowApp:
-    """Main entry point for the pgflows SDK.
-
-    Mental model — **pg_durable orchestrates the workflow; your Python runs the steps.**
-    A workflow is a durable graph that pg_durable drives inside Postgres (sequencing,
-    branching, parallelism, durability, replay). Your ``@app.step`` functions are the steps,
-    which pg_durable invokes via ``df.http()`` or the pgmq+NOTIFY binding (``worker_step`` +
-    a ``StepWorker``). pgmq+NOTIFY is the *step transport*, not a workflow engine.
-
-    Define a pg_durable workflow as data (``GraphSpec`` → ``start_graph``) or as Python
-    (``@app.workflow`` → ``exporter()`` to DSL).
-
-    A self-contained **pull worker** (``@app.workflow`` + ``ctx.step`` + ``run_worker``) is
-    also provided: Python orchestrates and ``pg_state`` checkpoints each step, so it needs no
-    pg_durable and suits simple/local runs. It is not a general workflow engine — for durable
-    orchestration prefer pg_durable; don't build large workflows as Python on the pull worker.
-    """
+    """Main entry point for the pgflows SDK."""
 
     def __init__(self, config: PgflowsConfig) -> None:
         self.config = config
@@ -229,18 +214,7 @@ class WorkflowApp:
         await self._queue.drop_queue(queue)  # type: ignore[union-attr]
 
     async def run_worker(self, *, reconnect: bool = False, max_backoff: float = 30.0) -> None:
-        """Run the **pull worker** loop (blocking). Use asyncio.create_task for background.
-
-        This is the self-contained Python orchestrator: it polls the pgmq *workflow* queue,
-        runs each ``@app.workflow`` function, and checkpoints steps to ``pg_state``. It does
-        not use pg_durable. For durable pg_durable-orchestrated workflows you run a
-        ``StepWorker`` (``run_step_worker``) instead — this loop is for the pull mode only.
-
-        With ``reconnect=True`` the loop is supervised: a transient failure (e.g. a
-        dropped DB connection) is caught and the backends are re-established with
-        exponential backoff up to ``max_backoff`` seconds, instead of propagating and
-        killing the worker. Stops cleanly on ``await app.close()`` or task cancellation.
-        """
+        """Run the pull worker loop (blocking). reconnect=True adds backoff-reconnect on failure."""
         self._assert_initialized()
         if not reconnect:
             await self._worker.run()  # type: ignore[union-attr]
@@ -310,10 +284,9 @@ class WorkflowApp:
         return GraphSpec.model_json_schema(by_alias=True)
 
     def compile_graph(self, spec: GraphSpec) -> DslNode:
-        """Compile a data-driven GraphSpec into a pg_durable DSL node.
+        """Compile a GraphSpec to a pg_durable DSL node (pure, offline).
 
-        Pure — usable offline. Validates the spec against pg_durable composition limits
-        (raises GraphCompileError) and emits DSL bound to this app's step queue/channel.
+        Raises GraphCompileError for invalid pg_durable compositions.
         """
         return _compile_graph(
             spec,
@@ -322,16 +295,7 @@ class WorkflowApp:
         )
 
     async def start_graph(self, spec: GraphSpec, *, label: str) -> str:
-        """Compile a GraphSpec and start it as a pg_durable run. Returns the instance ID.
-
-        Requires the pg_durable (df) extension — GraphSpec workflows are compiled to DSL
-        and orchestrated by Postgres. Run a StepWorker (``run_step_worker``) to execute the
-        steps the graph dispatches.
-
-        ``spec.input`` (if set) seeds the single ``{input}`` durable var the first node
-        reads. Because that var is database-scoped, ``start_graph`` is single-flight per
-        app: don't fire concurrent runs with different inputs against one app instance.
-        """
+        """Compile a GraphSpec and start it as a pg_durable run. Returns instance ID."""
         self._assert_initialized()
         if not self._pg_durable_available:
             raise RuntimeError(
@@ -356,13 +320,7 @@ class WorkflowApp:
         workflow_fn: Callable,
         input_model: BaseModel | None = None,
     ) -> str:
-        """Recurringly start a workflow on a cron schedule via pg_cron. Returns the job id.
-
-        Registers a pg_cron job whose command creates a pending instance and enqueues it
-        onto the workflow queue (+ a NOTIFY), the durable-safe recurring trigger — a
-        running pull worker (``run_worker``) then picks it up each tick. Re-scheduling the
-        same ``job_name`` replaces the existing job. Requires the pg_cron extension.
-        """
+        """Register a recurring pg_cron job that starts the workflow each tick. Returns job id."""
         self._assert_initialized()
         if self._scheduler is None:
             raise RuntimeError(
@@ -381,7 +339,7 @@ class WorkflowApp:
             raise RuntimeError("schedule_workflow requires the pg_cron extension")
         await self._scheduler.unschedule_by_name(job_name)
 
-    async def list_schedules(self) -> list:
+    async def list_schedules(self) -> list[ScheduledJob]:
         """List all pg_cron jobs in the database."""
         self._assert_initialized()
         if self._scheduler is None:
@@ -389,10 +347,6 @@ class WorkflowApp:
         return await self._scheduler.list_jobs()
 
     def _start_workflow_sql(self, workflow_name: str, input_json: str) -> str:
-        """SQL (run by pg_cron) that starts a workflow run: create instance + enqueue + notify.
-
-        Mirrors ``start()`` entirely in-database so no Python callback is needed on each tick.
-        """
         wf = workflow_name.replace("'", "''")
         payload = input_json.replace("'", "''")
         queue = self.config.workflow_queue
@@ -459,15 +413,6 @@ class WorkflowApp:
         name: str | None = None,
         step_defaults: RetryConfig | None = None,
     ) -> Callable:
-        """Register a Python workflow function.
-
-        Runnable two ways: by the pull worker (``run_worker`` — Python orchestrates), or
-        exported to a pg_durable graph via ``exporter()`` (pg_durable orchestrates). For
-        durable orchestration, branching, and parallelism prefer pg_durable — either export
-        this function or define the flow as a ``GraphSpec`` (``start_graph``); the pull worker
-        is the simpler local option, not a general workflow engine.
-        """
-
         def decorator(fn: Callable) -> Callable:
             self.registry.register_workflow(fn, name=name, step_defaults=step_defaults)
             return fn

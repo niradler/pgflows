@@ -4,20 +4,11 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-# A typed, extensible workflow spec compiled to a pg_durable DSL graph (see
-# graph_compiler.compile_graph). Each node is a member of a discriminated union on
-# `type`; adding a capability is one new class here plus one compile case there.
-
 
 class StepNode(BaseModel):
-    """Run a registered Python step via the pgmq+NOTIFY worker binding."""
-
     type: Literal["step"] = "step"
     step: str
-    # Optional jsonb SQL expression for this step's input (may reference $captures).
-    # When omitted, the step receives its upstream node's output (see compiler threading).
     input: str | None = None
-    # Optional explicit capture name for this step's output; auto-generated when omitted.
     capture: str | None = None
 
 
@@ -38,8 +29,6 @@ class WaitScheduleNode(BaseModel):
 
 
 class Condition(BaseModel):
-    """A registered step whose truthy output drives a branch/loop condition."""
-
     step: str
     input: str | None = None
 

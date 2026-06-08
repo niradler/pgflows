@@ -189,14 +189,7 @@ def loop(body: DslNode, condition: DslNode | None = None) -> DslNode:
 
 
 def enqueue(queue: str, payload: str, *, notify_channel: str | None = None) -> DslNode:
-    """Enqueue a pgmq message and ring the NOTIFY doorbell — the pgmq+NOTIFY trigger.
-
-    ``payload`` is a SQL expression that yields jsonb (e.g. a ``jsonb_build_object(...)``
-    call or a ``'{...}'::jsonb`` literal). Pairs with any listener draining ``queue``
-    (e.g. a ``StepWorker``, or a pull-mode worker reading the workflow queue): use it to
-    fan a durable graph out to a separate run without an inbound HTTP server. This is the
-    durable-safe way to trigger work from inside a ``loop``/``cron`` — see ``cron``.
-    """
+    """pgmq.send + pg_notify — trigger a listener (StepWorker, pull worker) from inside a flow."""
     _require_ident(queue, "queue")
     chan = notify_channel or queue
     _require_ident(chan, "notify_channel")
