@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY examples ./examples
 
-RUN pip install --no-cache-dir "pgflows[fastapi]==0.1.1"
+RUN pip install --no-cache-dir "pgflows[fastapi]==0.1.3"
 
 EXPOSE 8000
 
