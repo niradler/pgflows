@@ -13,15 +13,32 @@ pgflows lets you write long-running, fault-tolerant workflows as plain async Pyt
 
 ## How it works
 
-Each workflow step is persisted to Postgres before execution. If the process crashes mid-run, the worker replays from the last checkpoint — re-executing only the steps that haven't completed. All state, retries, and scheduling live in the database.
+**pg_durable orchestrates the workflow; your Python runs the steps.** A workflow is a
+durable graph — sequence, parallel, branch, loop — that **pg_durable drives inside
+Postgres**. It owns the orchestration: ordering, branching, parallelism, durability, and
+crash replay. Your Python functions are the **steps**, which pg_durable invokes via either
+an HTTP call (`df.http()`) or a **pgmq+NOTIFY** hand-off (`worker_step` → a `StepWorker`
+runs the function and returns the result).
+
+> **pgmq+NOTIFY is the step transport, not a workflow engine.** It is how a pg_durable
+> workflow runs a Python step; the workflow itself is still managed by pg_durable.
+
+You define a pg_durable workflow either **as data** (a [`GraphSpec`](#data-driven-workflows-graphspec)
+JSON document compiled to DSL) or **as Python** (`@app.workflow`, exported to DSL).
 
 ```text
-@workflow fn  →  WorkflowApp.start()
-                     ↓  enqueues to pgmq
-              Python async worker
-                     ↓  executes steps
-              PgStateBackend  ←→  Postgres
+GraphSpec  or  @app.workflow  ──►  pg_durable graph  (orchestrator, runs in Postgres)
+                                        │  invokes each step via
+                                        ├──►  df.http()           → your FastAPI endpoint
+                                        └──►  pgmq.send + NOTIFY   → StepWorker → your Python step
 ```
+
+> A self-contained **pull worker** also exists (`@app.workflow` + `ctx.step` +
+> `run_worker`): here *Python* orchestrates and each step is checkpointed to `pg_state`, so
+> it needs no pg_durable and suits simple or local runs. It is **not** a general workflow
+> engine — for durable orchestration, branching, and parallelism, let pg_durable drive
+> (above). Don't build a large workflow as Python glued together by the pgmq pull worker;
+> that reimplements what pg_durable already does.
 
 ## Quick start
 
@@ -75,6 +92,11 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+> The quick start above uses the **pull worker** — the simplest path, ideal for a first run.
+> For production durability, branching, and parallelism, define the workflow as a
+> [`GraphSpec`](#data-driven-workflows-graphspec) (or export it to DSL) and let **pg_durable**
+> orchestrate it; see [How it works](#how-it-works).
+
 ## Features
 
 - **Checkpoint replay** — workflows survive crashes; completed steps are never re-executed
@@ -82,8 +104,9 @@ asyncio.run(main())
 - **Configurable retries** — per-step `RetryConfig` with exponential or linear backoff and jitter
 - **Plugin hooks** — `before_workflow`, `after_workflow`, `on_workflow_error`, `before_step`, `after_step`, `on_step_error`
 - **Automatic migrations** — `await app.initialize()` applies schema migrations; no manual SQL required
-- **Two execution modes** — a Python pull worker, or push mode where pg_durable orchestrates and calls Python steps via `df.http()` or a pgmq+NOTIFY `StepWorker`
-- **Cron scheduler** — trigger recurring workflows via `PgCronBackend` (backed by pg_durable `df.wait_for_schedule`)
+- **pg_durable orchestration** — workflows run as durable pg_durable graphs (sequence, parallel, branch, loop); your Python runs as steps, invoked via `df.http()` or a pgmq+NOTIFY `StepWorker`. A self-contained Python pull worker is also available for simple/local runs
+- **Data-driven workflows** — compile a typed `GraphSpec` JSON document to a pg_durable graph (`app.start_graph`); no Python workflow function required
+- **Cron scheduler (optional)** — recurring workflows via `app.schedule_workflow`, backed by the `pg_cron` extension; pgflows runs fine without it (only scheduling is unavailable)
 - **Dead-letter queue** — failed workflows are archived to `pgmq.a_{queue}` instead of being re-queued indefinitely
 - **Worker coordination** — atomic `pending→running` claim prevents duplicate processing when multiple workers race on the same instance
 - **Swappable backends** — orchestrator, queue, and scheduler implement ABCs; swap without touching workflow code
@@ -125,9 +148,42 @@ async def my_step(ctx, input: MyInput) -> MyOutput: ...
 async def my_workflow(ctx, input: MyInput) -> MyOutput: ...
 ```
 
+## Data-driven workflows (GraphSpec)
+
+Describe a workflow as a typed JSON document and let pgflows compile it to a pg_durable
+graph that Postgres orchestrates — no Python workflow function required. This is the
+recommended path for workflows defined by config, an API, or a UI. **Requires pg_durable;**
+run a `StepWorker` to execute the Python steps the graph dispatches.
+
+```python
+from pgflows import GraphSpec
+
+spec = GraphSpec.model_validate({
+    "input": {"n": 4},
+    "root": {"type": "sequence", "nodes": [
+        {"type": "step", "step": "double_it"},
+        {"type": "branch",
+         "condition": {"step": "is_big"},
+         "then": {"type": "step", "step": "celebrate"},
+         "else": {"type": "step", "step": "retry_later"}},
+    ]},
+})
+
+import asyncio
+worker = asyncio.create_task(app.run_step_worker())   # executes the dispatched Python steps
+instance_id = await app.start_graph(spec, label="order-flow")   # compile → df.start()
+schema = app.graph_json_schema()                      # JSON Schema for UIs / validation
+```
+
+Node types (a discriminated union on `type`): `step`, `sleep`, `wait_signal`,
+`wait_schedule`, `sequence`, `parallel` (`mode: "all"|"race"`), `branch`, `loop`. The
+compiler enforces verified pg_durable limits (raises `GraphCompileError`): a `loop` and a
+`parallel` can't share an instance, and `race` must be terminal. Extend the schema by adding
+one node class in `graph.py` plus one compile case in `graph_compiler.py`.
+
 ## SQL export and runtime workflows
 
-pgflows can export any registered workflow to a [pg_durable](https://github.com/microsoft/pg_durable) SQL DSL. Use this to:
+pgflows can export any registered Python workflow to a [pg_durable](https://github.com/microsoft/pg_durable) SQL DSL. Use this to:
 
 - Transfer workflow definitions from dev → prod without code deployment
 - Create workflows at runtime from config, API payloads, or external systems
@@ -226,8 +282,9 @@ Gotchas worth knowing (all about using pg_durable correctly):
 ### Running push mode for real (pg_durable + pgmq)
 
 The bundled compose DB ships only pgmq. To exercise push mode end to end you need a
-Postgres with **both** extensions — build the combined image and run the live e2e
-(real `df.start` / `df.http` / `pgmq.send`, no mocks):
+Postgres with `pg_durable` too (and `pg_cron` for scheduling) — the combined e2e image is
+**Postgres 18 with pg_durable + pgmq + pg_cron**. Build it and run the live e2e
+(real `df.start` / `df.http` / `pgmq.send` / `cron.schedule`, no mocks):
 
 ```bash
 docker build -t pgflows-e2e-dfpgmq:latest tests/e2e/docker
@@ -258,25 +315,23 @@ async with app.acquire() as conn:
 `instance_nodes` expands the graph into structural `THEN`/`JOIN`/`IF` rows, so it returns
 more rows than the nodes you wrote — handy for seeing exactly where a run is.
 
-## Scheduling
+## Scheduling (optional — pg_cron)
 
-`PgCronBackend` schedules recurring workflows using pg_durable's `df.wait_for_schedule()` — no `pg_cron` extension required, only the `df` extension from [pg_durable](https://github.com/microsoft/pg_durable).
+Recurring schedules use the **`pg_cron`** extension — the right tool for recurring cron. (A
+pg_durable `@> (… ~> wait_for_schedule)` loop is *not*: it pins a worker connection forever
+and can't share an instance with parallel nodes.) `pg_cron` is **optional** — pgflows runs
+fine without it; only scheduling is unavailable (`app.pg_cron_available` reports presence,
+and `schedule_workflow` raises a clear error if it's missing).
+
+`app.schedule_workflow` registers a `cron.schedule` job whose command creates a pending
+instance + `pgmq.send` + `pg_notify` — a running worker then picks it up each tick.
 
 ```python
-from pgflows import PgCronBackend
-
-scheduler = PgCronBackend(dsn=config.dsn)
-await scheduler.initialize()
-
-# Schedule a workflow to run every hour (job_id is a pg_durable instance ID string)
-job_id = await scheduler.schedule(
-    job_name="hourly_health_check",
-    cron="0 * * * *",
-    command="SELECT pgflows.enqueue_workflow('health_check', '{}')",
-)
-
-jobs = await scheduler.list_jobs()
-await scheduler.unschedule(job_id)
+if app.pg_cron_available:
+    await app.schedule_workflow("hourly_health_check", "0 * * * *", health_check, CheckInput(...))
+    await app.schedule_workflow("fast", "10 seconds", ticker)   # pg_cron 1.5+ sub-minute
+    jobs = await app.list_schedules()
+    await app.unschedule_workflow("hourly_health_check")        # idempotent, by name
 ```
 
 ## Backend abstraction
@@ -304,10 +359,11 @@ app = WorkflowApp(config=config)
 
 **Postgres extensions** (15+):
 
-| Extension | Purpose |
-| --------- | ------- |
-| [`pgmq`](https://github.com/tembo-io/pgmq) | Step queue — enqueue, dequeue, dead-letter |
-| [`pg_durable` (`df`)](https://github.com/microsoft/pg_durable) | Durable orchestration — graph execution, scheduling, push-mode SQL export, execution history |
+| Extension | Required? | Purpose |
+| --------- | --------- | ------- |
+| [`pg_durable` (`df`)](https://github.com/microsoft/pg_durable) | Recommended | Workflow orchestration — durable graph execution, branching, parallelism, `GraphSpec`/SQL export, execution history |
+| [`pgmq`](https://github.com/tembo-io/pgmq) | Yes | Step queue + the pull worker — enqueue, dequeue, dead-letter, pgmq+NOTIFY step transport |
+| [`pg_cron`](https://github.com/citusdata/pg_cron) | Optional | Recurring schedules (`app.schedule_workflow`); everything else works without it |
 
 The bundled Postgres image ships both extensions pre-installed. To start it:
 

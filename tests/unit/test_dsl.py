@@ -5,6 +5,7 @@ import pytest
 from pgflows.dsl import (
     DslNode,
     break_,
+    enqueue,
     http,
     if_node,
     if_rows,
@@ -275,3 +276,26 @@ def test_worker_step_composes_with_operators():
     node = worker_step("a") >> worker_step("b")
     sql = str(node)
     assert sql.count("pgmq.send(") == 2
+
+
+# ---------------------------------------------------------------------------
+# enqueue / cron
+# ---------------------------------------------------------------------------
+
+
+def test_enqueue_emits_send_and_notify():
+    sql = str(enqueue("pgflows_workflows", "jsonb_build_object('k','v')"))
+    assert "pgmq.send(''pgflows_workflows''" in sql
+    assert "pg_notify(''pgflows_workflows''" in sql
+    assert "jsonb_build_object(''k'',''v'')" in sql
+
+
+def test_enqueue_separate_notify_channel():
+    sql = str(enqueue("q", "'{}'::jsonb", notify_channel="bell"))
+    assert "pgmq.send(''q''" in sql
+    assert "pg_notify(''bell''" in sql
+
+
+def test_enqueue_rejects_unsafe_queue():
+    with pytest.raises(ValueError, match="queue"):
+        enqueue("bad name", "'{}'::jsonb")

@@ -46,7 +46,10 @@ Every infrastructure concern lives behind an ABC in `backends/base.py`. The rest
 | `backends/pg_durable.py` | pg_durable extension backend |
 | `telemetry.py` | OTel span management |
 | `sql_exporter.py` | pg_durable DSL generation (selectable `http` / `pgmq` step bindings) |
-| `dsl.py` | Python DSL builders for pg_durable operators (incl. `worker_step`) |
+| `dsl.py` | Python DSL builders for pg_durable operators (incl. `worker_step`, `enqueue`) |
+| `graph.py` | Typed, extensible `GraphSpec` workflow schema (discriminated-union nodes) |
+| `graph_compiler.py` | Compile a `GraphSpec` → pg_durable DSL + composition-limit guard |
+| `backends/pg_cron.py` | Real pg_cron-backed recurring scheduler (`cron.schedule`) |
 | `fastapi_integration.py` | FastAPI router for push-mode endpoints |
 | `migrations.py` | Automatic schema migration on `initialize()` |
 | `pg_durable_client.py` | High-level client for pg_durable operations |
@@ -99,11 +102,13 @@ Install the FastAPI optional dependency when working on push-mode features:
 uv sync --extra fastapi
 ```
 
-### Live push-mode e2e (pg_durable + pgmq)
+### Live push-mode e2e (pg_durable + pgmq + pg_cron, Postgres 18)
 
 The default `docker compose` DB has only pgmq. The push-mode flows (`df.http`,
-pgmq+NOTIFY steps) need a Postgres that also has the `pg_durable` (`df`) extension.
-Build the combined image and point the tests at it:
+pgmq+NOTIFY steps, `GraphSpec` compilation) need a Postgres that also has the
+`pg_durable` (`df`) extension; recurring scheduling (`app.schedule_workflow`) needs
+`pg_cron`. The combined e2e image is **Postgres 18 with pg_durable + pgmq + pg_cron**.
+Build it and point the tests at it:
 
 ```bash
 docker build -t pgflows-e2e-dfpgmq:latest tests/e2e/docker

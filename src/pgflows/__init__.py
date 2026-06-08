@@ -11,6 +11,7 @@ from pgflows.context import StepContext, WorkflowContext
 from pgflows.dsl import (
     DslNode,
     break_,
+    enqueue,
     http,
     if_node,
     if_rows,
@@ -30,6 +31,19 @@ from pgflows.exceptions import (
     WorkflowAlreadyExistsError,
     WorkflowNotFoundError,
 )
+from pgflows.graph import (
+    BranchNode,
+    Condition,
+    GraphSpec,
+    LoopNode,
+    ParallelNode,
+    SequenceNode,
+    SleepNode,
+    StepNode,
+    WaitScheduleNode,
+    WaitSignalNode,
+)
+from pgflows.graph_compiler import GraphCompileError, compile_graph
 from pgflows.logger import configure_default_logging, get_logger
 from pgflows.pg_durable_client import (
     ExecutionRecord,
@@ -59,6 +73,7 @@ __all__ = [
     # DSL builders
     "DslNode",
     "break_",
+    "enqueue",
     "http",
     "if_node",
     "if_rows",
@@ -69,6 +84,19 @@ __all__ = [
     "sql_node",
     "wait_for_schedule",
     "wait_for_signal",
+    # Data-driven graph spec + compiler
+    "GraphSpec",
+    "Condition",
+    "StepNode",
+    "SleepNode",
+    "WaitSignalNode",
+    "WaitScheduleNode",
+    "SequenceNode",
+    "ParallelNode",
+    "BranchNode",
+    "LoopNode",
+    "compile_graph",
+    "GraphCompileError",
     # pg_durable runtime client
     "PgDurableClient",
     "InstanceInfo",

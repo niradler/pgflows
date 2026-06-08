@@ -11,75 +11,89 @@ _log = get_logger("scheduler")
 
 
 class PgCronBackend(SchedulerBackend):
-    """Cron-style scheduler backed by pg_durable.
+    """Recurring scheduler backed by the pg_cron extension.
 
-    Creates long-running durable functions using @> (infinite loop) combined
-    with df.wait_for_schedule() — no pg_cron extension required.
+    pg_cron is the right tool for recurring schedules — unlike a pg_durable
+    ``@> (… ~> wait_for_schedule)`` loop, which pins a worker connection forever and
+    cannot share an instance with parallel nodes. Each job is a ``cron.schedule`` entry
+    whose command runs in the ``cron.database_name`` database on the cron tick; pair it
+    with a command that ``pgmq.send`` + ``pg_notify`` to trigger a workflow run (see
+    ``WorkflowApp.schedule_workflow``).
 
-    Each scheduled job is a pg_durable instance that loops forever:
-        @> (command ~> df.wait_for_schedule(cron_expr))
+    Accepts either a ``dsn`` (opens its own small pool) or an existing ``pool`` to share.
     """
 
-    def __init__(self, dsn: str, pool_size: int = 2) -> None:
+    def __init__(
+        self,
+        dsn: str | None = None,
+        *,
+        pool: asyncpg.Pool | None = None,
+        pool_size: int = 2,
+    ) -> None:
+        if dsn is None and pool is None:
+            raise ValueError("PgCronBackend requires either a dsn or an existing pool")
         self._dsn = dsn
+        self._pool = pool
+        self._owns_pool = pool is None
         self._pool_size = pool_size
-        self._pool: asyncpg.Pool | None = None
 
     async def initialize(self) -> None:
-        self._pool = await asyncpg.create_pool(self._dsn, min_size=1, max_size=self._pool_size)
-        row = await self._pool.fetchrow("SELECT 1 FROM pg_extension WHERE extname = 'df'")
+        if self._pool is None:
+            self._pool = await asyncpg.create_pool(self._dsn, min_size=1, max_size=self._pool_size)
+        row = await self._pool.fetchrow("SELECT 1 FROM pg_extension WHERE extname = 'pg_cron'")
         if row is None:
             raise RuntimeError(
-                "pg_durable extension not installed. Run: CREATE EXTENSION IF NOT EXISTS df;"
+                "pg_cron extension not installed. Run: CREATE EXTENSION IF NOT EXISTS pg_cron; "
+                "(and add pg_cron to shared_preload_libraries)."
             )
 
     async def schedule(self, job_name: str, cron: str, command: str) -> str:
-        """Create an infinite-loop durable function that fires on the cron schedule.
-
-        Returns the pg_durable instance_id which serves as the job_id.
-        """
+        """Register (or replace) a named cron job. Returns the pg_cron job id."""
         self._assert_initialized()
-        instance_id: str = await self._pool.fetchval(  # type: ignore[union-attr]
-            "SELECT df.start(@> ($1 ~> df.wait_for_schedule($2)), $3)",
-            command,
-            cron,
-            job_name,
+        job_id: int = await self._pool.fetchval(  # type: ignore[union-attr]
+            "SELECT cron.schedule($1, $2, $3)", job_name, cron, command
         )
-        _log.info("scheduled job=%s instance=%s cron=%s", job_name, instance_id, cron)
-        return instance_id
+        _log.info("scheduled job=%s id=%s cron=%s", job_name, job_id, cron)
+        return str(job_id)
 
     async def unschedule(self, job_id: str) -> None:
+        """Remove a cron job by its numeric job id (as returned by schedule())."""
         self._assert_initialized()
-        status = await self._pool.fetchval(  # type: ignore[union-attr]
-            "SELECT df.status($1)", job_id
+        removed: bool = await self._pool.fetchval(  # type: ignore[union-attr]
+            "SELECT cron.unschedule($1::bigint)", int(job_id)
         )
-        if status is None:
+        if not removed:
             raise SchedulerJobNotFoundError(job_id)
+        _log.info("unscheduled job id=%s", job_id)
+
+    async def unschedule_by_name(self, job_name: str) -> None:
+        """Remove a cron job by name — idempotent (no error if already absent)."""
+        self._assert_initialized()
         await self._pool.execute(  # type: ignore[union-attr]
-            "SELECT df.cancel($1, 'Unscheduled')", job_id
+            "DELETE FROM cron.job WHERE jobname = $1", job_name
         )
-        _log.info("unscheduled job=%s", job_id)
+        _log.info("unscheduled job name=%s", job_name)
 
     async def list_jobs(self) -> list[ScheduledJob]:
         self._assert_initialized()
         rows = await self._pool.fetch(  # type: ignore[union-attr]
-            "SELECT instance_id, label, status FROM df.list_instances('running')"
+            "SELECT jobid, jobname, schedule, command, active FROM cron.job"
         )
         return [
             ScheduledJob(
-                job_id=r["instance_id"],
-                job_name=r["label"] or r["instance_id"],
-                cron="",
-                command="",
-                active=r["status"] == "running",
+                job_id=str(r["jobid"]),
+                job_name=r["jobname"] or str(r["jobid"]),
+                cron=r["schedule"],
+                command=r["command"],
+                active=r["active"],
             )
             for r in rows
         ]
 
     async def close(self) -> None:
-        if self._pool is not None:
+        if self._pool is not None and self._owns_pool:
             await self._pool.close()
-            self._pool = None
+        self._pool = None
 
     def _assert_initialized(self) -> None:
         if self._pool is None:

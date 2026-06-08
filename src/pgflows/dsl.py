@@ -188,6 +188,16 @@ def loop(body: DslNode, condition: DslNode | None = None) -> DslNode:
     return DslNode(f"df.loop({body._sql}, {condition._sql})")
 
 
+def enqueue(queue: str, payload: str, *, notify_channel: str | None = None) -> DslNode:
+    """pgmq.send + pg_notify — trigger a listener (StepWorker, pull worker) from inside a flow."""
+    _require_ident(queue, "queue")
+    chan = notify_channel or queue
+    _require_ident(chan, "notify_channel")
+    send = sql_node(f"SELECT pgmq.send('{queue}', ({payload})::jsonb)")
+    notify = sql_node(f"SELECT pg_notify('{chan}', '{{sys_instance_id}}')")
+    return send >> notify
+
+
 def join3(a: DslNode, b: DslNode, c: DslNode) -> DslNode:
     """Three-way parallel join — waits for all three to complete."""
     return DslNode(f"df.join3({a._sql}, {b._sql}, {c._sql})")
@@ -213,6 +223,7 @@ def break_(value: str | None = None) -> DslNode:
 __all__ = [
     "DslNode",
     "break_",
+    "enqueue",
     "http",
     "if_node",
     "if_rows",

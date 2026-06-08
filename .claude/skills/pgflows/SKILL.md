@@ -20,16 +20,19 @@ await app.close()        # always call on teardown
 
 `await app.initialize()` must run before any other call. It applies pending DB migrations automatically — no manual `psql` required.
 
+`PgflowsConfig.dsn` normalizes `postgresql+psycopg://`, `postgresql+asyncpg://`, and `postgres://` → bare `postgresql://`.
+
 ## Execution Modes — Pull vs Push
 
-| Concern | Pull (Worker) | Push (pg_durable) |
+| Concern | Pull worker (standalone) | pg_durable (recommended) |
 |---------|--------------|-------------------|
-| Orchestrator | Python `WorkflowWorker` polling pgmq | pg_durable in Postgres |
-| Durability | Python-side checkpointing via pgmq + pg_state | pg_durable native replay |
-| Step invocation | `await ctx.step(fn, input)` in Python | `df.http()` calls FastAPI endpoint |
-| Best for | Python-heavy logic, complex branching | SQL-native workflows, cross-DB, signals |
+| Orchestrator | Python `WorkflowWorker` polling pgmq | **pg_durable in Postgres** |
+| Durability | Python checkpointing via pgmq + pg_state | pg_durable native replay |
+| Define as | `@app.workflow` Python fn | `GraphSpec` JSON, or `@app.workflow` exported to DSL |
+| Steps run via | `await ctx.step(fn, input)` in-process | `df.http()` or pgmq+NOTIFY `worker_step`/`StepWorker` |
+| Best for | simple/local, no pg_durable | durable orchestration, branching, parallelism, scheduling |
 
-**Pull mode** — define and run:
+**Pull worker** — the simpler standalone path (Python orchestrates):
 
 ```python
 @app.workflow(name="process_order")
@@ -41,7 +44,8 @@ async def process_order(ctx: WorkflowContext, inp: OrderInput) -> None:
 async def validate_order(ctx: StepContext, inp: OrderInput) -> ValidationResult:
     ...
 
-await app.run_worker()   # blocking; use asyncio.create_task for background
+await app.run_worker()                               # blocking; use asyncio.create_task for background
+await app.run_worker(reconnect=True, max_backoff=30.0)  # supervise: reconnects on transient DB drops
 ```
 
 **Starting and observing a pull-mode run** — the exact signatures:
@@ -187,6 +191,14 @@ node = app.worker_step("double_it", capture="d")   # uses config.step_queue + st
 `worker_step`'s first step needs its input seeded: `input_expr` defaults to
 `"'{input}'::jsonb"` (the `{input}` durable var), so `await client.setvar("input", json_str)`
 before `start`, or pass a JSON literal: `input_expr="'{\"n\":4}'::jsonb"`.
+
+## Data-driven workflows — GraphSpec
+
+`app.start_graph(GraphSpec.model_validate({...}), label=)` compiles a JSON workflow spec to pg_durable DSL and starts it (requires pg_durable; run a `StepWorker` for the Python steps). Node types: `step`, `sleep`, `wait_signal`, `wait_schedule`, `sequence`, `parallel` (`mode:"all"|"race"`), `branch`, `loop`. Sequences auto-thread output→input; after `parallel mode="all"` the merge step gets `{"b0":…, "b1":…}`. Raises `GraphCompileError` for loop+parallel coexistence or non-terminal race. `app.graph_json_schema()` returns JSON Schema; `app.compile_graph(spec)` is pure/offline.
+
+## Recurring schedules — pg_cron
+
+`app.schedule_workflow(name, cron, fn, input?)` / `unschedule_workflow(name)` / `list_schedules()` — requires the pg_cron extension (`app.pg_cron_available`; raises if absent). Use pg_cron for recurring work — a pg_durable loop pins a worker connection forever and can't share an instance with parallel nodes. `enqueue(queue, payload, notify_channel=)` is the pgmq.send + pg_notify DSL builder for fanning out from inside a durable flow.
 
 ## PgDurableClient
 
