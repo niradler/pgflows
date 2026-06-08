@@ -12,7 +12,7 @@ from pgflows.backends.pg_cron import PgCronBackend
 from pgflows.backends.pg_state import PgStateBackend
 from pgflows.backends.pgmq import PgmqBackend
 from pgflows.config import PgflowsConfig
-from pgflows.dsl import DslNode, worker_step
+from pgflows.dsl import DslNode, _require_ident, worker_step
 from pgflows.graph import GraphSpec
 from pgflows.graph_compiler import compile_graph as _compile_graph
 from pgflows.logger import get_logger
@@ -350,6 +350,7 @@ class WorkflowApp:
         wf = workflow_name.replace("'", "''")
         payload = input_json.replace("'", "''")
         queue = self.config.workflow_queue
+        _require_ident(queue, "workflow_queue")
         return (
             "WITH inst AS ("
             "INSERT INTO pgflows.workflow_instances (workflow_name, input) "
