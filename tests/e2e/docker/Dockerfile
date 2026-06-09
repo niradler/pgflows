@@ -2,7 +2,9 @@
 #
 # Postgres 18 + pg_durable (df) + pgmq + pg_cron — e2e test image.
 # pg_durable: downloads a GitHub release binary if one exists; builds from source otherwise.
-# pgmq:       pure SQL — copied from the tembo image (ABI-agnostic across PG versions).
+# pgmq:       pure SQL — copied from the official tembo image (no .so, pg-version-agnostic).
+#             tembo-io/pgmq publishes no binary release assets so the image is the only
+#             reliable distribution channel short of a full source build.
 # pg_cron:    installed from the PGDG apt repo.
 
 ARG CARGO_PGRX_VERSION=0.16.1
@@ -82,6 +84,10 @@ COPY --from=pg_durable_builder /artifacts/lib/   /usr/lib/postgresql/18/lib/
 
 # pgmq is pure SQL (no .so); glob matches whether the source image is pg17 or pg18.
 COPY --from=pgmq_src /usr/share/postgresql/*/extension/pgmq* /usr/share/postgresql/18/extension/
+
+# Fail the build if pgmq extension files were not copied.
+RUN test -f /usr/share/postgresql/18/extension/pgmq.control \
+    || { echo "ERROR: pgmq.control missing — check PGMQ_IMAGE"; exit 1; }
 
 # Extensions are created once on first container start via the postgres initdb hook.
 COPY 01-extensions.sql /docker-entrypoint-initdb.d/
