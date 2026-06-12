@@ -1,10 +1,15 @@
 .DEFAULT_GOAL := help
-.PHONY: help install test test-unit test-e2e lint fmt up down clean publish
+.PHONY: help install test test-unit test-e2e lint fmt up down clean publish publish-postgres
 
 # ── versioning ────────────────────────────────────────────────────────────────
 VERSION := $(shell grep '^version' pyproject.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')
 DOCKER_REPO_DH := niradler/pgflows
 DOCKER_REPO_GHCR := ghcr.io/niradler/pgflows
+
+# Postgres e2e image: pg<major>-pgmq<ver>-pg_durable<ver>-pgcron<ver>
+POSTGRES_TAG := 18-1.5.1-0.2.2-1.6.7
+POSTGRES_REPO_DH := niradler/pgflows-postgres
+POSTGRES_REPO_GHCR := ghcr.io/niradler/pgflows-postgres
 
 # ── environment ──────────────────────────────────────────────────────────────
 PGFLOWS_TEST_DSN ?= postgresql://pgflows:pgflows@127.0.0.1:5433/pgflows_test
@@ -23,6 +28,7 @@ help:
 	@echo "  fmt          Auto-fix lint issues with ruff"
 	@echo "  clean        Remove build artifacts and __pycache__"
 	@echo "  publish      Bump pyproject.toml version first, then: build+push to PyPI, Docker Hub, GHCR"
+	@echo "  publish-postgres  Build+push the pgflows-postgres e2e image (tag: $(POSTGRES_TAG))"
 
 # ── setup ─────────────────────────────────────────────────────────────────────
 install:
@@ -57,16 +63,31 @@ publish: lint
 	@echo "Publishing pgflows $(VERSION)"
 	uv build
 	uv publish --trusted-publishing never
-	docker build --no-cache -t pgflows-app:$(VERSION) .
-	docker tag pgflows-app:$(VERSION) $(DOCKER_REPO_DH):$(VERSION)
-	docker tag pgflows-app:$(VERSION) $(DOCKER_REPO_DH):latest
-	docker tag pgflows-app:$(VERSION) $(DOCKER_REPO_GHCR):$(VERSION)
-	docker tag pgflows-app:$(VERSION) $(DOCKER_REPO_GHCR):latest
+	docker build --no-cache \
+		-t $(DOCKER_REPO_DH):$(VERSION) \
+		-t $(DOCKER_REPO_DH):latest \
+		-t $(DOCKER_REPO_GHCR):$(VERSION) \
+		-t $(DOCKER_REPO_GHCR):latest \
+		.
 	docker push $(DOCKER_REPO_DH):$(VERSION)
 	docker push $(DOCKER_REPO_DH):latest
 	docker push $(DOCKER_REPO_GHCR):$(VERSION)
 	docker push $(DOCKER_REPO_GHCR):latest
 	@echo "Published $(VERSION) to PyPI, Docker Hub, and GHCR"
+
+publish-postgres:
+	@echo "Publishing pgflows-postgres $(POSTGRES_TAG)"
+	docker build --no-cache \
+		-t $(POSTGRES_REPO_DH):$(POSTGRES_TAG) \
+		-t $(POSTGRES_REPO_DH):latest \
+		-t $(POSTGRES_REPO_GHCR):$(POSTGRES_TAG) \
+		-t $(POSTGRES_REPO_GHCR):latest \
+		tests/e2e/docker
+	docker push $(POSTGRES_REPO_DH):$(POSTGRES_TAG)
+	docker push $(POSTGRES_REPO_DH):latest
+	docker push $(POSTGRES_REPO_GHCR):$(POSTGRES_TAG)
+	docker push $(POSTGRES_REPO_GHCR):latest
+	@echo "Published pgflows-postgres $(POSTGRES_TAG) to Docker Hub and GHCR"
 
 # ── cleanup ───────────────────────────────────────────────────────────────────
 clean:

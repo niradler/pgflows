@@ -11,13 +11,6 @@ services:
       POSTGRES_DB: pgflows_test
     ports:
       - "5433:5432"
-    command: >
-      postgres
-      -c shared_preload_libraries=pg_durable,pg_cron
-      -c pg_durable.database=pgflows_test
-      -c pg_durable.worker_role=pgflows
-      -c pg_durable.enable_superuser_instances=on
-      -c cron.database_name=pgflows_test
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U pgflows -d pgflows_test"]
       interval: 5s
