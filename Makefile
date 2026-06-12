@@ -6,8 +6,8 @@ VERSION := $(shell grep '^version' pyproject.toml | head -1 | sed 's/.*= *"\(.*\
 DOCKER_REPO_DH := niradler/pgflows
 DOCKER_REPO_GHCR := ghcr.io/niradler/pgflows
 
-# Postgres e2e image: pg<major>-pgmq<ver>-pg_durable<ver>
-POSTGRES_TAG := 18-1.5.1-0.2.2
+# Postgres e2e image: pg<major>-pgmq<ver>-pg_durable<ver>-pgcron<ver>
+POSTGRES_TAG := 18-1.5.1-0.2.2-1.6.7
 POSTGRES_REPO_DH := niradler/pgflows-postgres
 POSTGRES_REPO_GHCR := ghcr.io/niradler/pgflows-postgres
 
